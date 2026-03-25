@@ -48,6 +48,38 @@ function toDateTimeValue(value) {
   return Date.now();
 }
 
+function setBitableFieldValue(fields, fieldInfo, value, kind) {
+  if (!fieldInfo || !fieldInfo.fieldName) return;
+  const type = fieldInfo.fieldType;
+
+  if (type === 1) {
+    fields[fieldInfo.fieldName] = value == null ? '' : String(value);
+    return;
+  }
+
+  if (type === 2) {
+    fields[fieldInfo.fieldName] = kind === 'datetime' ? toNumber(toDateTimeValue(value)) : toNumber(value);
+    return;
+  }
+
+  if (type === 5) {
+    fields[fieldInfo.fieldName] = toDateTimeValue(value);
+    return;
+  }
+
+  if (kind === 'number') {
+    fields[fieldInfo.fieldName] = toNumber(value);
+    return;
+  }
+
+  if (kind === 'datetime') {
+    fields[fieldInfo.fieldName] = toDateTimeValue(value);
+    return;
+  }
+
+  fields[fieldInfo.fieldName] = value == null ? '' : String(value);
+}
+
 async function getTenantAccessToken() {
   const response = await fetch('https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal', {
     method: 'POST',
@@ -95,18 +127,14 @@ function buildFieldMapping(fieldsItems) {
 function buildFieldsPayload(record, mapping) {
   const fields = {};
 
-  if (mapping.campaign_name) fields[mapping.campaign_name.fieldName] = String(record.campaign_name || '');
-  if (mapping.spend) fields[mapping.spend.fieldName] = toNumber(record.spend);
-  if (mapping.impressions) fields[mapping.impressions.fieldName] = toNumber(record.impressions);
-  if (mapping.clicks) fields[mapping.clicks.fieldName] = toNumber(record.clicks);
-  if (mapping.operator) fields[mapping.operator.fieldName] = String(record.operator || '');
-
-  if (mapping.timestamp) {
-    fields[mapping.timestamp.fieldName] = toDateTimeValue(record.timestamp || '');
-  }
-
-  if (mapping.date_start) fields[mapping.date_start.fieldName] = String(record.date_start || '');
-  if (mapping.date_stop) fields[mapping.date_stop.fieldName] = String(record.date_stop || '');
+  setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
+  setBitableFieldValue(fields, mapping.spend, record.spend, 'number');
+  setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
+  setBitableFieldValue(fields, mapping.clicks, record.clicks, 'number');
+  setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
+  setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
+  setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
+  setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
 
   return fields;
 }
