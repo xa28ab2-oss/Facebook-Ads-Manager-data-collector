@@ -138,6 +138,11 @@
             return;
           }
 
+          try {
+            const sample = collectedData.slice(0, 3);
+            addLog('采集数据(前3条): ' + JSON.stringify(sample));
+          } catch (e) {}
+
           updateStats(collectedData);
           updateStatus('正在上传数据...', 'collecting');
 
@@ -176,12 +181,30 @@
 
             if (uploadResponse.ok) {
               const resultData = await uploadResponse.json();
-              updateStatus('上传成功!', 'success');
-              addLog('数据已成功上传到 Lark', 'info');
+              const uploaded = resultData && typeof resultData.uploaded === 'number' ? resultData.uploaded : null;
+              const failed = resultData && typeof resultData.failed === 'number' ? resultData.failed : null;
+              const errors = resultData && Array.isArray(resultData.errors) ? resultData.errors : null;
+
+              if (uploaded === 0 && failed && failed > 0) {
+                updateStatus('上传完成(有错误)', 'error');
+                addLog('上传结果: 成功 0 条，失败 ' + failed + ' 条', 'error');
+              } else {
+                updateStatus('上传成功!', 'success');
+                if (uploaded != null && failed != null) {
+                  addLog('上传结果: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条', 'info');
+                } else {
+                  addLog('数据已成功上传到 Lark', 'info');
+                }
+              }
+
+              if (errors && errors.length > 0) {
+                addLog('写入失败明细(前3条): ' + JSON.stringify(errors.slice(0, 3)), 'error');
+              }
             } else {
               const errorText = await uploadResponse.text();
               updateStatus('上传失败', 'error');
               addLog('上传失败: ' + uploadResponse.status, 'error');
+              if (errorText) addLog('服务端返回: ' + errorText, 'error');
             }
           } catch (uploadError) {
             updateStatus('上传失败', 'error');

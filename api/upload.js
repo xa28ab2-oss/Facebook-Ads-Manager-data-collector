@@ -99,6 +99,7 @@ module.exports = async function handler(req, res) {
         if (result.code && result.code !== 0) {
           errors.push({
             campaign_name: record.campaign_name,
+            code: result.code,
             error: result.msg
           });
         } else {
@@ -107,6 +108,7 @@ module.exports = async function handler(req, res) {
       } catch (err) {
         errors.push({
           campaign_name: record.campaign_name,
+          code: -1,
           error: err.message
         });
       }
@@ -122,4 +124,3 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'Internal server error: ' + error.message });
   }
 };
-
