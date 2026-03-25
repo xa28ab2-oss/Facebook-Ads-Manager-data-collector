@@ -50,6 +50,11 @@ function toDateTimeValue(value) {
 
 function setBitableFieldValue(fields, fieldInfo, value, kind) {
   if (!fieldInfo || !fieldInfo.fieldName) return;
+  if (value === null || value === undefined) return;
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s || s === '-' || s === '—' || s === 'null') return;
+  }
   const type = fieldInfo.fieldType;
 
   if (type === 1) {
@@ -113,8 +118,13 @@ function buildFieldMapping(fieldsItems) {
   const mapping = {
     campaign_name: pickField(fieldsIndex, ['campaign_name', 'campaignname', 'campaign', '广告系列', '广告系列名称', '系列名称']),
     spend: pickField(fieldsIndex, ['spend', 'cost', 'amountspent', '已花费金额', '花费', '花费金额', '消耗']),
+    budget: pickField(fieldsIndex, ['budget', '预算', '日预算', '总预算', 'lifetimebudget', 'dailybudget']),
     impressions: pickField(fieldsIndex, ['impressions', '展示次数', '展示', '展现次数']),
     clicks: pickField(fieldsIndex, ['clicks', '点击次数', '点击']),
+    unique_link_clicks: pickField(fieldsIndex, ['unique_link_clicks', '链接点击量-独立用户', '链接点击量', '链接点击量（独立用户）']),
+    results: pickField(fieldsIndex, ['results', '成效', '结果']),
+    cost_per_result: pickField(fieldsIndex, ['cost_per_result', '单次成效费用', '单次结果费用', '每结果费用']),
+    complete_registrations: pickField(fieldsIndex, ['complete_registrations', 'complete_registration', '完成注册次数', '注册完成次数']),
     operator: pickField(fieldsIndex, ['operator', '操作人', '操作者', '采集人']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
@@ -128,9 +138,14 @@ function buildFieldsPayload(record, mapping) {
   const fields = {};
 
   setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
+  setBitableFieldValue(fields, mapping.budget, record.budget, 'number');
   setBitableFieldValue(fields, mapping.spend, record.spend, 'number');
   setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
   setBitableFieldValue(fields, mapping.clicks, record.clicks, 'number');
+  setBitableFieldValue(fields, mapping.unique_link_clicks, record.unique_link_clicks, 'number');
+  setBitableFieldValue(fields, mapping.results, record.results, 'number');
+  setBitableFieldValue(fields, mapping.cost_per_result, record.cost_per_result, 'number');
+  setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
   setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');

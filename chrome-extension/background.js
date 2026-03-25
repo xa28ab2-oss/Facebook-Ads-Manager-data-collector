@@ -6,6 +6,7 @@ let debuggerAttached = false;
 let targetTabId = null;
 let lastError = null;
 let pendingResponseByRequestId = new Map();
+let lastHeaders = null;
 
 function log(...args) {
   console.log('[Facebook Ads Collector BG]', ...args);
@@ -56,6 +57,23 @@ function decodeBody(body, base64Encoded) {
   }
 }
 
+function normalizeValue(value) {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (s === 'null' || s === '-' || s === '—') return null;
+  return s;
+}
+
+function pickAtomicValue(atomicByName, candidates) {
+  for (const name of candidates) {
+    if (!Object.prototype.hasOwnProperty.call(atomicByName, name)) continue;
+    const v = normalizeValue(atomicByName[name]);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
 function extractFacebookInsightsData(data) {
   const records = [];
   if (!data || !data.data || !Array.isArray(data.data)) return records;
@@ -67,36 +85,65 @@ function extractFacebookInsightsData(data) {
     const dimensions = headers.dimensions || [];
     const atomicColumns = headers.atomic_columns || [];
 
+    if (!lastHeaders) {
+      lastHeaders = {
+        dimensions: dimensions.slice(0),
+        atomic_columns: atomicColumns.map((c) => (c && c.name) || null).filter(Boolean)
+      };
+    }
+
     const dimensionIndex = {};
     for (let i = 0; i < dimensions.length; i++) {
       dimensionIndex[dimensions[i]] = i;
-    }
-
-    const atomicIndex = {};
-    for (let i = 0; i < atomicColumns.length; i++) {
-      const name = atomicColumns[i] && atomicColumns[i].name;
-      if (name) atomicIndex[name] = i;
     }
 
     for (const row of dataset.rows) {
       const dimensionValues = row.dimension_values || [];
       const atomicValues = row.atomic_values || [];
 
+      const atomicByName = {};
+      for (let i = 0; i < atomicColumns.length; i++) {
+        const name = atomicColumns[i] && atomicColumns[i].name;
+        if (!name) continue;
+        atomicByName[name] = atomicValues[i];
+      }
+
       const campaignId = dimensionValues[dimensionIndex.campaign_id] || '';
       const objective = dimensionValues[dimensionIndex.objective] || '';
       const dateStart = dimensionValues[dimensionIndex.date_start] || '';
       const dateStop = dimensionValues[dimensionIndex.date_stop] || '';
 
-      const spend = atomicValues[atomicIndex.spend] ?? '0';
-      const impressions = atomicValues[atomicIndex.impressions] ?? '0';
-
       if (!campaignId) continue;
+
+      const spend = pickAtomicValue(atomicByName, ['spend', 'amount_spent', 'total_spend', 'cost']);
+      const impressions = pickAtomicValue(atomicByName, ['impressions', 'total_impressions']);
+      const clicks = pickAtomicValue(atomicByName, [
+        'unique_link_clicks',
+        'unique_outbound_clicks',
+        'unique_clicks',
+        'link_clicks',
+        'outbound_clicks',
+        'clicks'
+      ]);
+      const budget = pickAtomicValue(atomicByName, ['budget', 'campaign_budget', 'daily_budget', 'lifetime_budget']);
+      const results = pickAtomicValue(atomicByName, ['results']);
+      const costPerResult = pickAtomicValue(atomicByName, ['cost_per_result']);
+      const completeRegistrations = pickAtomicValue(atomicByName, [
+        'complete_registration',
+        'omni_complete_registration',
+        'registrations',
+        'complete_registrations'
+      ]);
 
       records.push({
         campaign_name: `${objective} (${campaignId})`,
-        spend: String(spend === 'null' || spend === null ? '0' : spend),
-        impressions: String(impressions === 'null' || impressions === null ? '0' : impressions),
-        clicks: '0',
+        spend: spend,
+        budget: budget,
+        impressions: impressions,
+        clicks: clicks,
+        results: results,
+        cost_per_result: costPerResult,
+        complete_registrations: completeRegistrations,
         date_start: String(dateStart),
         date_stop: String(dateStop),
       });
@@ -135,7 +182,7 @@ function extractAdData(data) {
 function upsertRecords(records) {
   for (const record of records) {
     const exists = collectedRecords.some(
-      (r) => r.campaign_name === record.campaign_name && r.spend === record.spend && r.date_start === record.date_start
+      (r) => r.campaign_name === record.campaign_name && r.date_start === record.date_start && r.date_stop === record.date_stop
     );
     if (!exists) collectedRecords.push(record);
   }
@@ -151,6 +198,7 @@ async function startCollecting(tabId) {
   targetTabId = tabId;
   collectedRecords = [];
   pendingResponseByRequestId = new Map();
+  lastHeaders = null;
 
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
@@ -244,6 +292,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       success: true,
       data: collectedRecords,
       error: lastError,
+      meta: lastHeaders,
     });
     return true;
   }
