@@ -4,6 +4,9 @@
 
 ```
 Facebook_data_Chrome_Extension/
+├── api/                      # Vercel 后端 API（推荐，部署后路径 /api/upload）
+│   └── upload.js             # 上传数据接口
+│
 ├── chrome-extension/          # Chrome 插件目录
 │   ├── manifest.json          # Manifest V3 配置
 │   ├── popup.html             # 插件 popup 界面
@@ -85,6 +88,8 @@ Facebook_data_Chrome_Extension/
 5. 获取 **数据表 ID** (在表格 URL 中)
 
 #### 步骤 4: 部署到 Vercel
+
+推荐方式：直接部署仓库根目录（Vercel 会自动识别根目录的 [api/upload.js](file:///c:/Users/tang/Documents/trae_projects/Facebook_data_Chrome_Extension/api/upload.js)，对外提供 `/api/upload`）。
 
 **方式一: 使用 Vercel CLI**
 

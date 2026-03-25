@@ -5,11 +5,13 @@
   "description": "从 Facebook Ads Manager 采集广告数据并上传到 Lark 多维表格",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "debugger"
   ],
   "host_permissions": [
     "*://*.facebook.com/*",
-    "*://*.adsmanager.facebook.com/*"
+    "*://*.adsmanager.facebook.com/*",
+    "*://*.adsmanager-graph.facebook.com/*"
   ],
   "action": {
     "default_popup": "popup.html"

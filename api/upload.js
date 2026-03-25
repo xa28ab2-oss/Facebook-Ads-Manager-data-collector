@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 const LARK_APP_TOKEN = process.env.LARK_APP_TOKEN || '';
 const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
@@ -66,7 +64,7 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 
-  const { operator, timestamp, data } = req.body;
+  const { operator, timestamp, data } = req.body || {};
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -120,9 +118,8 @@ module.exports = async function handler(req, res) {
       failed: errors.length,
       errors: errors.length > 0 ? errors : undefined
     });
-
   } catch (error) {
-    console.error('Upload error:', error);
     return res.status(500).json({ error: 'Internal server error: ' + error.message });
   }
 };
+
