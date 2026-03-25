@@ -1,0 +1,13 @@
+{
+  "name": "facebook-ads-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "deploy": "vercel deploy"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}
