@@ -6,6 +6,7 @@
   const logEl = document.getElementById('log');
   const apiEndpointInput = document.getElementById('apiEndpoint');
   const apiTokenInput = document.getElementById('apiToken');
+  const usernameInput = document.getElementById('username');
   const recordCountEl = document.getElementById('recordCount');
   const totalSpendEl = document.getElementById('totalSpend');
   const totalImpressionsEl = document.getElementById('totalImpressions');
@@ -41,22 +42,33 @@
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['apiEndpoint', 'apiToken'], function(result) {
+    chrome.storage.local.get(['apiEndpoint', 'apiToken', 'username'], function(result) {
       if (result.apiEndpoint) apiEndpointInput.value = result.apiEndpoint;
       if (result.apiToken) apiTokenInput.value = result.apiToken;
+      if (result.username) usernameInput.value = result.username;
     });
   }
 
   function saveSettings() {
     chrome.storage.local.set({
       apiEndpoint: apiEndpointInput.value,
-      apiToken: apiTokenInput.value
+      apiToken: apiTokenInput.value,
+      username: usernameInput.value
     });
   }
 
   function sendToBackground(message) {
     return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve({ success: false, error: 'background timeout' });
+      }, 8000);
       chrome.runtime.sendMessage(message, (response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (chrome.runtime.lastError) {
           resolve({ success: false, error: chrome.runtime.lastError.message });
           return;
@@ -76,9 +88,22 @@
     });
   }
 
+  function ensureContentScript(tabId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }, () => {
+          resolve(!chrome.runtime.lastError);
+        });
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
   collectBtn.addEventListener('click', async function() {
     const apiEndpoint = apiEndpointInput.value.trim();
     const apiToken = apiTokenInput.value.trim();
+    const username = usernameInput.value.trim();
 
     if (!apiEndpoint) {
       updateStatus('请输入 API 端点地址', 'error');
@@ -101,31 +126,79 @@
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       addLog('标签页 ID: ' + tab.id);
+      if (tab && tab.url) addLog('标签页 URL: ' + tab.url);
+
+      const ping = await sendToBackground({ action: 'ping' });
+      if (!ping || !ping.success) {
+        addLog('后台未响应，尝试继续启动采集', 'error');
+      }
 
       const startResp = await sendToBackground({ action: 'startCollection', tabId: tab.id });
       if (!startResp || !startResp.success) {
         updateStatus('采集启动失败', 'error');
         addLog('采集启动失败: ' + ((startResp && startResp.error) || 'unknown'), 'error');
+        if (startResp && startResp.error === 'background timeout') {
+          addLog('后台未响应，正在重新加载扩展，请重新打开弹窗再试', 'error');
+          chrome.runtime.reload();
+        }
         collectBtn.disabled = false;
         return;
       }
 
       addLog('点击刷新按钮...');
-      findAndClickRefreshButton(tab.id, function(success, error) {
-        if (success) {
-          addLog('刷新按钮已点击');
-        } else {
-          addLog('点击刷新按钮失败: ' + error, 'error');
+      let ready = false;
+      for (let i = 0; i < 12; i++) {
+        const statusResp = await sendToBackground({ action: 'getStatus' });
+        if (statusResp && statusResp.ready) {
+          ready = true;
+          break;
         }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (!ready) {
+        addLog('采集尚未完全就绪，继续尝试刷新', 'error');
+      }
 
+      const proceedAfterRefresh = function() {
         addLog('等待 10 秒采集数据...');
-
         setTimeout(async function() {
           addLog('正在获取采集结果...');
 
           const response = await sendToBackground({ action: 'getData' });
           collectedData = (response && response.data) || [];
           addLog('采集到 ' + collectedData.length + ' 条记录');
+
+          try {
+            if (response && response.meta) {
+              if (response.meta.atomic_columns) {
+                addLog('采集列(atomic_columns): ' + JSON.stringify(response.meta.atomic_columns));
+              }
+              if (response.meta.dimensions) {
+                addLog('采集列(dimensions): ' + JSON.stringify(response.meta.dimensions));
+              }
+              if (typeof response.meta.name_cache_size === 'number') {
+                addLog('名称缓存命中: ' + response.meta.name_cache_size);
+              }
+              if (response.meta.name_sample) {
+                addLog('名称缓存样例: ' + JSON.stringify(response.meta.name_sample));
+              }
+              if (typeof response.meta.capture_count === 'number') {
+                addLog('响应捕获数: ' + response.meta.capture_count);
+              }
+              if (typeof response.meta.parsed_count === 'number') {
+                addLog('解析成功数: ' + response.meta.parsed_count);
+              }
+              if (typeof response.meta.dataset_row_count === 'number') {
+                addLog('返回行数: ' + response.meta.dataset_row_count);
+              }
+              if (typeof response.meta.record_candidate_count === 'number') {
+                addLog('候选记录数: ' + response.meta.record_candidate_count);
+              }
+              if (typeof response.meta.record_kept_count === 'number') {
+                addLog('保留记录数: ' + response.meta.record_kept_count);
+              }
+            }
+          } catch (e) {}
 
           if (collectedData.length === 0) {
             updateStatus('未检测到广告数据', 'error');
@@ -146,9 +219,12 @@
           updateStats(collectedData);
           updateStatus('正在上传数据...', 'collecting');
 
+          const collectedAt = Date.now();
+          const collectedAtMinute = Math.floor(collectedAt / 60000) * 60000;
           const payload = {
-            operator: 'unknown',
-            timestamp: new Date().toISOString(),
+            operator: username || 'unknown',
+            username: username || '',
+            timestamp: collectedAtMinute,
             data: collectedData
           };
 
@@ -217,6 +293,39 @@
           await sendToBackground({ action: 'stopCollection' });
           collectBtn.disabled = false;
         }, 10000);
+      };
+
+      findAndClickRefreshButton(tab.id, async function(success, error) {
+        if (success) {
+          addLog('刷新按钮已点击');
+          proceedAfterRefresh();
+          return;
+        }
+
+        const errText = String(error || '');
+        if (errText.includes('Receiving end does not exist')) {
+          addLog('点击刷新按钮失败: ' + error, 'error');
+          addLog('检测到内容脚本未连接，尝试注入...', 'error');
+          const injected = await ensureContentScript(tab.id);
+          if (injected) {
+            addLog('内容脚本已注入，重试点击刷新...');
+            findAndClickRefreshButton(tab.id, function(success2, error2) {
+              if (success2) {
+                addLog('刷新按钮已点击');
+              } else {
+                addLog('点击刷新按钮失败: ' + (error2 || 'unknown'), 'error');
+              }
+              proceedAfterRefresh();
+            });
+          } else {
+            addLog('注入失败：请重新加载插件并刷新 Ads Manager 页面', 'error');
+            proceedAfterRefresh();
+          }
+          return;
+        }
+
+        addLog('点击刷新按钮失败: ' + error, 'error');
+        proceedAfterRefresh();
       });
 
     } catch (error) {
@@ -234,6 +343,7 @@
 
   apiEndpointInput.addEventListener('change', saveSettings);
   apiTokenInput.addEventListener('change', saveSettings);
+  usernameInput.addEventListener('change', saveSettings);
 
   loadSettings();
   addLog('插件已就绪，请在 Facebook Ads Manager 页面使用', 'info');

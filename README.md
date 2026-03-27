@@ -117,6 +117,65 @@ vercel env add API_TOKEN
 vercel --prod
 ```
 
+---
+
+## 三、数据来源与字段映射
+
+本插件从 Ads Manager 两类接口组合还原数据：
+
+- am_tabular（统计表格接口）
+  - 作用：返回“统计口径”的明细/汇总数据
+  - 结构：`headers + rows`
+    - `headers.dimensions`：维度列顺序（如 `campaign_id/objective/date_start/date_stop`）
+    - `headers.atomic_columns`：指标列顺序（如 `reach/spend/impressions`）
+    - `rows[i].dimension_values/atomic_values`：与以上顺序一一对应
+    - `result_columns/action_columns`：`results/cost_per_result` 属于结果类型，不在 `atomic_values`，需要结合 `action_values/result_values`
+  - 处理要点：
+    - `"null" / "-" / "—"` 视为缺失值，不写 0
+    - 只有 `objective/date_*` 的行是汇总（`MULTIPLE`），不写入 campaign 明细
+    - 维度包含 `campaign_id` 才是每行一个 campaign 的明细
+
+- graphql（AdCampaignGroup 等）
+  - 作用：返回“配置/元数据”类信息
+  - 常用字段：
+    - `id`：campaign_id
+    - `name`：广告系列真实名称
+    - `daily_budget_safe_value_str` / `lifetime_budget_safe_value_str` / `budget_remaining_safe_value_str`：预算字段（字符串，单位为货币最小单位，需 ÷100）
+    - `delivery_status`：投放状态
+  - 用途：
+    - 名称映射：优先用 `name`，若本轮未抓到则回退为 `objective (id)`
+    - 预算映射：优先用 `daily_budget_safe_value_str` 或 `budget_remaining_safe_value_str`（÷100）
+
+字段写入规则：
+
+- 明细指标：来自 `am_tabular` 的 `atomic_values`（按顺序对应 `atomic_columns`）
+  - `spend` → 已花费金额
+  - `impressions` → 展示次数
+  - `reach` → 触达
+  - `clicks/unique_link_clicks` 等按列配置返回
+- 结果类指标：`results/cost_per_result` 由 `result_columns + action_values/result_values` 描述，当 `values: "modeled"` 表示模型估算
+- 名称与预算：来自 `graphql`；以 `campaign_id` 合并到明细
+- 缺失值：保持空，不写 0
+
+示例（来自 graphql 的名称与预算解析，数值均 ÷100 转金额）：
+
+- 6989638042835：name=xl-mjl-15，daily=5000→50.00，remaining=5000→50.00
+- 6989709539035：name=hd-dt，daily=300→3.00，remaining=300→3.00
+- 6990513538235：name=XH-HD -1/23，daily=2000→20.00，remaining=2000→20.00
+- 6988103009035：name=MJL-AG-13K-5，daily=null，remaining=0→0
+- 6986076671435：name=BLJ-HD-JN，daily=null，remaining=0→0
+
+排查指引：
+
+- 采集日志中：
+  - `采集列(atomic_columns)` 出现 `reach/spend/impressions` → 已获取指标
+  - `采集数据(前3条)` 中值为 `"0"` 表示确实为 0；为 `"null"` 表示缺失
+- 若名称仍为 `OUTCOME_… (id)`：
+  - 本轮未触发返回 `name` 的 graphql 请求；滚动广告系列列表或打开编辑侧栏以触发
+  - 可查看插件日志：`名称缓存命中` 与 `名称缓存样例`
+- 若预算为空：
+  - 本轮未触发返回预算字段的 graphql；可在预算设置面板触发，或后端降级为只写入已获取的指标
+
 **方式二: 使用 GitHub 部署**
 
 1. 将 `vercel-api` 目录推送到 GitHub 仓库

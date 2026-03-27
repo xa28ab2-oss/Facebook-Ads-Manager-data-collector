@@ -6,10 +6,12 @@
   "permissions": [
     "activeTab",
     "storage",
-    "debugger"
+    "debugger",
+    "scripting"
   ],
   "host_permissions": [
     "*://*.facebook.com/*",
+    "*://*.business.facebook.com/*",
     "*://*.adsmanager.facebook.com/*",
     "*://*.adsmanager-graph.facebook.com/*"
   ],
@@ -20,6 +22,7 @@
     {
       "matches": [
         "*://*.facebook.com/*",
+        "*://*.business.facebook.com/*",
         "*://*.adsmanager.facebook.com/*"
       ],
       "js": ["content.js"],

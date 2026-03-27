@@ -1,4 +1,4 @@
-const API_PATTERNS = [/adsmanager-graph\\.facebook\\.com/, /act_\\d+/, /am_tabular/];
+const API_PATTERNS = [/adsmanager-graph\.facebook\.com/, /act_\d+/, /am_tabular/, /\/api\/graphql/, /graphql/];
 
 let isCollecting = false;
 let collectedRecords = [];
@@ -7,6 +7,13 @@ let targetTabId = null;
 let lastError = null;
 let pendingResponseByRequestId = new Map();
 let lastHeaders = null;
+let campaignNameById = new Map();
+let captureCount = 0;
+let parsedCount = 0;
+let datasetRowCount = 0;
+let recordCandidateCount = 0;
+let recordKeptCount = 0;
+let collectingReady = false;
 
 function log(...args) {
   console.log('[Facebook Ads Collector BG]', ...args);
@@ -57,6 +64,20 @@ function decodeBody(body, base64Encoded) {
   }
 }
 
+function sanitizeJsonText(text) {
+  if (typeof text !== 'string') return null;
+  let s = text.trim();
+  if (!s) return null;
+  if (s.startsWith('for (;;);')) {
+    s = s.slice('for (;;);'.length).trim();
+  }
+  if (s.startsWith(")]}'")) {
+    const idx = s.indexOf('\n');
+    s = (idx === -1 ? '' : s.slice(idx + 1)).trim();
+  }
+  return s || null;
+}
+
 function normalizeValue(value) {
   if (value === null || value === undefined) return null;
   const s = String(value).trim();
@@ -74,6 +95,70 @@ function pickAtomicValue(atomicByName, candidates) {
   return null;
 }
 
+function maybeStoreCampaignName(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  const id = obj.id || obj.campaign_id || obj.campaignId;
+  const name = obj.name;
+  if (!id || !name) return false;
+  const idStr = String(id);
+  if (!/^\d{6,20}$/.test(idStr)) return false;
+  if (typeof name !== 'string' || !name.trim()) return false;
+  campaignNameById.set(idStr, name.trim());
+  return true;
+}
+
+function extractCampaignNames(data) {
+  let found = false;
+  function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (maybeStoreCampaignName(node)) found = true;
+    for (const key in node) {
+      if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+      const v = node[key];
+      if (v && typeof v === 'object') walk(v);
+    }
+  }
+  walk(data);
+  if (found) {
+    for (let i = 0; i < collectedRecords.length; i++) {
+      const rec = collectedRecords[i];
+      if (!rec) continue;
+      const cid = rec.campaign_id
+        ? String(rec.campaign_id)
+        : (rec.campaign_name && /\((\d+)\)$/.exec(rec.campaign_name) ? /\((\d+)\)$/.exec(rec.campaign_name)[1] : null);
+      if (!cid) continue;
+      const friendly = campaignNameById.get(cid);
+      if (friendly) {
+        collectedRecords[i] = { ...rec, campaign_id: cid, campaign_name: `${friendly} (${cid})` };
+      }
+    }
+  }
+  return found;
+}
+
+function hasAnyMetricColumn(atomicColumns) {
+  for (const col of atomicColumns) {
+    const name = col && col.name;
+    if (!name) continue;
+    if (
+      name === 'spend' ||
+      name === 'impressions' ||
+      name === 'reach' ||
+      name === 'clicks' ||
+      name === 'unique_link_clicks' ||
+      name === 'results' ||
+      name === 'cost_per_result'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function extractFacebookInsightsData(data) {
   const records = [];
   if (!data || !data.data || !Array.isArray(data.data)) return records;
@@ -84,8 +169,9 @@ function extractFacebookInsightsData(data) {
     const headers = dataset.headers;
     const dimensions = headers.dimensions || [];
     const atomicColumns = headers.atomic_columns || [];
+    datasetRowCount += Array.isArray(dataset.rows) ? dataset.rows.length : 0;
 
-    if (!lastHeaders) {
+    if (!lastHeaders && hasAnyMetricColumn(atomicColumns)) {
       lastHeaders = {
         dimensions: dimensions.slice(0),
         atomic_columns: atomicColumns.map((c) => (c && c.name) || null).filter(Boolean)
@@ -108,13 +194,19 @@ function extractFacebookInsightsData(data) {
         atomicByName[name] = atomicValues[i];
       }
 
-      const campaignId = dimensionValues[dimensionIndex.campaign_id] || '';
+      const campaignId =
+        dimensionValues[dimensionIndex.campaign_id] ||
+        dimensionValues[dimensionIndex.adset_id] ||
+        dimensionValues[dimensionIndex.ad_id] ||
+        '';
       const objective = dimensionValues[dimensionIndex.objective] || '';
       const dateStart = dimensionValues[dimensionIndex.date_start] || '';
       const dateStop = dimensionValues[dimensionIndex.date_stop] || '';
 
       if (!campaignId) continue;
+      recordCandidateCount += 1;
 
+      const reach = pickAtomicValue(atomicByName, ['reach']);
       const spend = pickAtomicValue(atomicByName, ['spend', 'amount_spent', 'total_spend', 'cost']);
       const impressions = pickAtomicValue(atomicByName, ['impressions', 'total_impressions']);
       const clicks = pickAtomicValue(atomicByName, [
@@ -135,8 +227,15 @@ function extractFacebookInsightsData(data) {
         'complete_registrations'
       ]);
 
+      const hasMetricColumns = hasAnyMetricColumn(atomicColumns);
+      if (!hasMetricColumns) continue;
+
+      recordKeptCount += 1;
+      const friendly = campaignNameById.get(String(campaignId));
       records.push({
-        campaign_name: `${objective} (${campaignId})`,
+        campaign_id: String(campaignId),
+        campaign_name: (friendly ? `${friendly}` : `${objective}`) + ` (${campaignId})`,
+        reach: reach,
         spend: spend,
         budget: budget,
         impressions: impressions,
@@ -181,10 +280,14 @@ function extractAdData(data) {
 
 function upsertRecords(records) {
   for (const record of records) {
-    const exists = collectedRecords.some(
-      (r) => r.campaign_name === record.campaign_name && r.date_start === record.date_start && r.date_stop === record.date_stop
+    const idx = collectedRecords.findIndex(
+      (r) => r.campaign_id === record.campaign_id && r.date_start === record.date_start && r.date_stop === record.date_stop
     );
-    if (!exists) collectedRecords.push(record);
+    if (idx === -1) {
+      collectedRecords.push(record);
+    } else {
+      collectedRecords[idx] = { ...collectedRecords[idx], ...record };
+    }
   }
 }
 
@@ -199,16 +302,28 @@ async function startCollecting(tabId) {
   collectedRecords = [];
   pendingResponseByRequestId = new Map();
   lastHeaders = null;
+  campaignNameById = new Map();
+  captureCount = 0;
+  parsedCount = 0;
+  datasetRowCount = 0;
+  recordCandidateCount = 0;
+  recordKeptCount = 0;
+  collectingReady = false;
 
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
   await chromeDebuggerSendCommand(tabId, 'Network.enable');
+  try {
+    await chromeDebuggerSendCommand(tabId, 'Network.setCacheDisabled', { cacheDisabled: true });
+  } catch (e) {}
   isCollecting = true;
+  collectingReady = true;
 }
 
 async function stopCollecting() {
   isCollecting = false;
   pendingResponseByRequestId = new Map();
+  collectingReady = false;
 
   if (!debuggerAttached || targetTabId == null) return;
 
@@ -217,6 +332,7 @@ async function stopCollecting() {
   debuggerAttached = false;
 
   try {
+    await chromeDebuggerSendCommand(tabId, 'Network.setCacheDisabled', { cacheDisabled: false });
     await chromeDebuggerSendCommand(tabId, 'Network.disable');
   } catch (e) {}
 
@@ -235,6 +351,7 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
     if (!requestId || !url || !shouldCapture(url)) return;
     if (typeof status === 'number' && (status < 200 || status >= 300)) return;
     pendingResponseByRequestId.set(requestId, url);
+    captureCount += 1;
     return;
   }
 
@@ -250,13 +367,21 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
       const bodyResult = await chromeDebuggerSendCommand(targetTabId, 'Network.getResponseBody', { requestId });
       const body = decodeBody(bodyResult && bodyResult.body, bodyResult && bodyResult.base64Encoded);
       if (!body || typeof body !== 'string') return;
-      if (!body.trim().startsWith('{')) return;
+      const jsonText = sanitizeJsonText(body);
+      if (!jsonText) return;
+      if (!(jsonText.startsWith('{') || jsonText.startsWith('['))) return;
 
-      const json = JSON.parse(body);
+      const json = JSON.parse(jsonText);
+      parsedCount += 1;
+      extractCampaignNames(json);
       const records = extractAdData(json);
       if (records.length) upsertRecords(records);
     } catch (e) {
-      lastError = e.message || String(e);
+      const message = e && e.message ? e.message : String(e);
+      if (message && message.includes('No resource with given identifier found')) {
+        return;
+      }
+      lastError = message;
     }
   }
 });
@@ -266,13 +391,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (action === 'startCollection') {
     const tabId = request && request.tabId;
-    Promise.resolve()
-      .then(() => startCollecting(tabId))
-      .then(() => sendResponse({ success: true }))
-      .catch((e) => {
-        lastError = e && e.message ? e.message : String(e);
-        sendResponse({ success: false, error: lastError });
-      });
+    try {
+      Promise.resolve()
+        .then(() => startCollecting(tabId))
+        .catch((e) => {
+          lastError = e && e.message ? e.message : String(e);
+        });
+      sendResponse({ success: true });
+    } catch (e) {
+      lastError = e && e.message ? e.message : String(e);
+      sendResponse({ success: false, error: lastError });
+    }
     return true;
   }
 
@@ -287,12 +416,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (action === 'ping') {
+    sendResponse({ success: true, status: 'ok' });
+    return true;
+  }
+
+  if (action === 'getStatus') {
+    sendResponse({
+      success: true,
+      ready: collectingReady,
+      attached: debuggerAttached,
+      collecting: isCollecting
+    });
+    return true;
+  }
+
   if (action === 'getData') {
+    const nameSample = Array.from(campaignNameById.entries()).slice(0, 5).map(([campaign_id, name]) => ({
+      campaign_id,
+      name
+    }));
     sendResponse({
       success: true,
       data: collectedRecords,
       error: lastError,
-      meta: lastHeaders,
+      meta: {
+        ...lastHeaders,
+        name_cache_size: campaignNameById.size,
+        name_sample: nameSample,
+        capture_count: captureCount,
+        parsed_count: parsedCount,
+        dataset_row_count: datasetRowCount,
+        record_candidate_count: recordCandidateCount,
+        record_kept_count: recordKeptCount
+      },
     });
     return true;
   }
