@@ -83,6 +83,38 @@ function setBitableFieldValue(fields, fieldInfo, value, kind) {
   fields[fieldInfo.fieldName] = value == null ? '' : String(value);
 }
 
+function buildSourceValueMap(record) {
+  const map = new Map();
+  if (!record || typeof record !== 'object') return map;
+  for (const key of Object.keys(record)) {
+    if (key === 'raw_fields') continue;
+    map.set(normalizeFieldName(key), record[key]);
+  }
+  const rawFields = record.raw_fields;
+  if (rawFields && typeof rawFields === 'object') {
+    for (const key of Object.keys(rawFields)) {
+      map.set(normalizeFieldName(key), rawFields[key]);
+    }
+  }
+  return map;
+}
+
+function guessKind(value) {
+  if (value === null || value === undefined) return 'text';
+  if (typeof value === 'number') {
+    return value > 10000000000 ? 'datetime' : 'number';
+  }
+  const s = String(value).trim();
+  if (!s) return 'text';
+  const parsed = Date.parse(s);
+  if (Number.isFinite(parsed) && (s.includes('-') || s.includes('/') || s.includes(':'))) {
+    return 'datetime';
+  }
+  const n = Number(s);
+  if (Number.isFinite(n)) return 'number';
+  return 'text';
+}
+
 async function getTenantAccessToken() {
   const response = await fetch('https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal', {
     method: 'POST',
@@ -133,7 +165,7 @@ function buildFieldMapping(fieldsItems) {
   return mapping;
 }
 
-function buildFieldsPayload(record, mapping) {
+function buildFieldsPayload(record, mapping, fieldsItems) {
   const fields = {};
 
   setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
@@ -150,6 +182,15 @@ function buildFieldsPayload(record, mapping) {
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
+
+  const fieldsIndex = buildFieldNameIndex(fieldsItems || []);
+  const sourceMap = buildSourceValueMap(record);
+  for (const [normKey, value] of sourceMap.entries()) {
+    const fieldInfo = fieldsIndex.get(normKey);
+    if (!fieldInfo || fields[fieldInfo.fieldName] !== undefined) continue;
+    const kind = guessKind(value);
+    setBitableFieldValue(fields, fieldInfo, value, kind);
+  }
 
   return fields;
 }
@@ -221,7 +262,8 @@ module.exports = async function handler(req, res) {
             username: username || operator,
             timestamp: timestamp
           },
-          fieldMapping
+          fieldMapping,
+          fieldsItems
         );
 
         if (!fieldsPayload || Object.keys(fieldsPayload).length === 0) {

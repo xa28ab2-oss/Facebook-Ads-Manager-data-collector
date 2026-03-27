@@ -1,4 +1,4 @@
-const API_PATTERNS = [/adsmanager-graph\.facebook\.com/, /act_\d+/, /am_tabular/, /\/api\/graphql/, /graphql/];
+const API_PATTERNS = ['adsmanager-graph.facebook.com', 'act_', 'am_tabular', '/api/graphql', 'graphql'];
 
 let isCollecting = false;
 let collectedRecords = [];
@@ -23,7 +23,7 @@ function shouldCapture(url) {
   if (!url) return false;
   const lowerUrl = url.toLowerCase();
   for (const pattern of API_PATTERNS) {
-    if (pattern.test(lowerUrl)) return true;
+    if (lowerUrl.includes(pattern)) return true;
   }
   return false;
 }
@@ -86,6 +86,25 @@ function normalizeValue(value) {
   return s;
 }
 
+function isAllDigits(value) {
+  if (!value) return false;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 48 || code > 57) return false;
+  }
+  return true;
+}
+
+function extractIdFromName(name) {
+  if (!name) return null;
+  const end = name.lastIndexOf(')');
+  const start = name.lastIndexOf('(');
+  if (start === -1 || end !== name.length - 1 || start >= end - 1) return null;
+  const id = name.slice(start + 1, end);
+  if (!isAllDigits(id)) return null;
+  return id;
+}
+
 function pickAtomicValue(atomicByName, candidates) {
   for (const name of candidates) {
     if (!Object.prototype.hasOwnProperty.call(atomicByName, name)) continue;
@@ -101,7 +120,8 @@ function maybeStoreCampaignName(obj) {
   const name = obj.name;
   if (!id || !name) return false;
   const idStr = String(id);
-  if (!/^\d{6,20}$/.test(idStr)) return false;
+  if (idStr.length < 6 || idStr.length > 20) return false;
+  if (!isAllDigits(idStr)) return false;
   if (typeof name !== 'string' || !name.trim()) return false;
   campaignNameById.set(idStr, name.trim());
   return true;
@@ -129,7 +149,7 @@ function extractCampaignNames(data) {
       if (!rec) continue;
       const cid = rec.campaign_id
         ? String(rec.campaign_id)
-        : (rec.campaign_name && /\((\d+)\)$/.exec(rec.campaign_name) ? /\((\d+)\)$/.exec(rec.campaign_name)[1] : null);
+        : extractIdFromName(rec.campaign_name);
       if (!cid) continue;
       const friendly = campaignNameById.get(cid);
       if (friendly) {
@@ -186,6 +206,13 @@ function extractFacebookInsightsData(data) {
     for (const row of dataset.rows) {
       const dimensionValues = row.dimension_values || [];
       const atomicValues = row.atomic_values || [];
+
+      const dimensionByName = {};
+      for (let i = 0; i < dimensions.length; i++) {
+        const name = dimensions[i];
+        if (!name) continue;
+        dimensionByName[name] = dimensionValues[i];
+      }
 
       const atomicByName = {};
       for (let i = 0; i < atomicColumns.length; i++) {
@@ -245,6 +272,7 @@ function extractFacebookInsightsData(data) {
         complete_registrations: completeRegistrations,
         date_start: String(dateStart),
         date_stop: String(dateStop),
+        raw_fields: { ...dimensionByName, ...atomicByName }
       });
     }
   }

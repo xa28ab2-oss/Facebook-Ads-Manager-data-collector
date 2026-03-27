@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Facebook Ads Manager Data Collector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "从 Facebook Ads Manager 采集广告数据并上传到 Lark 多维表格",
   "permissions": [
     "activeTab",
@@ -30,6 +30,6 @@
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.worker.js"
   }
 }
