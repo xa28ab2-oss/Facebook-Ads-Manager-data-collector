@@ -186,13 +186,6 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-
-  if (token !== API_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-  }
-
   const { operator, username, timestamp, data } = req.body;
 
   if (!data || !Array.isArray(data)) {

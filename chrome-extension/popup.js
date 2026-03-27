@@ -4,13 +4,13 @@
   const clearBtn = document.getElementById('clearBtn');
   const statsEl = document.getElementById('stats');
   const logEl = document.getElementById('log');
-  const apiEndpointInput = document.getElementById('apiEndpoint');
-  const apiTokenInput = document.getElementById('apiToken');
   const usernameInput = document.getElementById('username');
   const recordCountEl = document.getElementById('recordCount');
   const totalSpendEl = document.getElementById('totalSpend');
   const totalImpressionsEl = document.getElementById('totalImpressions');
   const totalClicksEl = document.getElementById('totalClicks');
+
+  const apiEndpoint = 'https://facebook-ads-manager-data-collector.vercel.app/api/upload';
 
   let collectedData = [];
 
@@ -42,17 +42,13 @@
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['apiEndpoint', 'apiToken', 'username'], function(result) {
-      if (result.apiEndpoint) apiEndpointInput.value = result.apiEndpoint;
-      if (result.apiToken) apiTokenInput.value = result.apiToken;
+    chrome.storage.local.get(['username'], function(result) {
       if (result.username) usernameInput.value = result.username;
     });
   }
 
   function saveSettings() {
     chrome.storage.local.set({
-      apiEndpoint: apiEndpointInput.value,
-      apiToken: apiTokenInput.value,
       username: usernameInput.value
     });
   }
@@ -101,21 +97,7 @@
   }
 
   collectBtn.addEventListener('click', async function() {
-    const apiEndpoint = apiEndpointInput.value.trim();
-    const apiToken = apiTokenInput.value.trim();
     const username = usernameInput.value.trim();
-
-    if (!apiEndpoint) {
-      updateStatus('请输入 API 端点地址', 'error');
-      addLog('错误: 未设置 API 端点', 'error');
-      return;
-    }
-
-    if (!apiToken) {
-      updateStatus('请输入授权 Token', 'error');
-      addLog('错误: 未设置授权 Token', 'error');
-      return;
-    }
 
     saveSettings();
 
@@ -234,10 +216,9 @@
             try {
               const preflight = await fetch(apiEndpoint, {
                 method: 'OPTIONS',
-                headers: {
-                  'Authorization': 'Bearer ' + apiToken,
-                  'Content-Type': 'application/json'
-                }
+              headers: {
+                'Content-Type': 'application/json'
+              }
               });
               addLog('预检(OPTIONS)状态: ' + preflight.status);
             } catch (preflightError) {
@@ -249,8 +230,7 @@
             const uploadResponse = await fetch(apiEndpoint, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + apiToken
+                'Content-Type': 'application/json'
               },
               body: JSON.stringify(payload)
             });
@@ -341,8 +321,6 @@
     addLog('日志已清空', 'info');
   });
 
-  apiEndpointInput.addEventListener('change', saveSettings);
-  apiTokenInput.addEventListener('change', saveSettings);
   usernameInput.addEventListener('change', saveSettings);
 
   loadSettings();
