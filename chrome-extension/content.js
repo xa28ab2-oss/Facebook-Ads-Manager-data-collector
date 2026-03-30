@@ -31,10 +31,44 @@
     return false;
   }
 
+  function findHorizontalScrollContainer() {
+    const nodes = document.querySelectorAll('div');
+    let best = null;
+    let bestOverflow = 0;
+    for (const node of nodes) {
+      if (!node || node.offsetParent === null) continue;
+      const style = window.getComputedStyle(node);
+      const overflowX = style && style.overflowX;
+      if (overflowX !== 'auto' && overflowX !== 'scroll') continue;
+      const overflow = node.scrollWidth - node.clientWidth;
+      if (overflow > 50 && overflow > bestOverflow) {
+        best = node;
+        bestOverflow = overflow;
+      }
+    }
+    return best;
+  }
+
+  function scrollTable(position) {
+    const container = findHorizontalScrollContainer();
+    if (!container) return false;
+    const max = container.scrollWidth - container.clientWidth;
+    if (position === 'left') container.scrollLeft = 0;
+    else if (position === 'right') container.scrollLeft = max;
+    else if (position === 'center') container.scrollLeft = Math.max(0, Math.floor(max / 2));
+    else container.scrollLeft = 0;
+    return true;
+  }
+
   chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'clickRefresh') {
       const clicked = findAndClickRefreshButton();
       sendResponse({ success: clicked });
+      return true;
+    }
+    if (request.action === 'scrollTable') {
+      const ok = scrollTable(request.position);
+      sendResponse({ success: ok });
       return true;
     }
   });
