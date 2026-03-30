@@ -311,9 +311,7 @@ function upsertRecords(records) {
     if (idx === -1) {
       collectedRecords.push(record);
     } else {
-      const existing = collectedRecords[idx] || {};
-      const mergedRaw = { ...(existing.raw_fields || {}), ...(record.raw_fields || {}) };
-      collectedRecords[idx] = { ...existing, ...record, raw_fields: mergedRaw };
+      collectedRecords[idx] = { ...collectedRecords[idx], ...record };
     }
   }
 }
