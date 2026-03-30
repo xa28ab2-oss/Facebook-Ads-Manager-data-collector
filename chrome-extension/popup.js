@@ -5,6 +5,8 @@
   const statsEl = document.getElementById('stats');
   const logEl = document.getElementById('log');
   const usernameInput = document.getElementById('username');
+  const projectNameInput = document.getElementById('projectName');
+  const buyerNameInput = document.getElementById('buyerName');
   const recordCountEl = document.getElementById('recordCount');
   const totalSpendEl = document.getElementById('totalSpend');
   const totalImpressionsEl = document.getElementById('totalImpressions');
@@ -13,18 +15,39 @@
   const apiEndpoint = 'https://facebook-ads-manager-data-collector.vercel.app/api/upload';
 
   let collectedData = [];
+  let logEntries = [];
+  let statusState = { message: '等待采集...', type: 'idle' };
 
   function updateStatus(message, type) {
+    statusState = { message, type };
     statusEl.textContent = message;
     statusEl.className = 'status ' + type;
+    persistUIState();
+  }
+
+  function renderLog(entry) {
+    const item = document.createElement('div');
+    item.className = 'log-entry ' + entry.type;
+    item.textContent = '[' + entry.time + '] ' + entry.message;
+    logEl.appendChild(item);
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
   function addLog(message, type = 'info') {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry ' + type;
-    entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
-    logEl.appendChild(entry);
-    logEl.scrollTop = logEl.scrollHeight;
+    const entry = {
+      time: new Date().toLocaleTimeString(),
+      message,
+      type
+    };
+    logEntries.push(entry);
+    if (logEntries.length > 200) {
+      logEntries = logEntries.slice(logEntries.length - 200);
+      logEl.innerHTML = '';
+      for (const item of logEntries) renderLog(item);
+    } else {
+      renderLog(entry);
+    }
+    persistUIState();
   }
 
   function updateStats(data) {
@@ -39,17 +62,59 @@
     totalSpendEl.textContent = '$' + totals.spend.toFixed(2);
     totalImpressionsEl.textContent = totals.impressions.toLocaleString();
     totalClicksEl.textContent = totals.clicks.toLocaleString();
+    persistUIState();
+  }
+
+  function persistUIState() {
+    chrome.storage.local.set({
+      uiState: {
+        status: statusState,
+        logs: logEntries,
+        stats: {
+          visible: statsEl.style.display !== 'none',
+          recordCount: recordCountEl.textContent,
+          totalSpend: totalSpendEl.textContent,
+          totalImpressions: totalImpressionsEl.textContent,
+          totalClicks: totalClicksEl.textContent
+        }
+      }
+    });
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['username'], function(result) {
+    chrome.storage.local.get(['username', 'projectName', 'buyerName', 'uiState'], function(result) {
       if (result.username) usernameInput.value = result.username;
+      if (result.projectName) projectNameInput.value = result.projectName;
+      if (result.buyerName) buyerNameInput.value = result.buyerName;
+      if (result.uiState) {
+        const uiState = result.uiState;
+        if (uiState.status) {
+          statusState = uiState.status;
+          statusEl.textContent = statusState.message || '等待采集...';
+          statusEl.className = 'status ' + (statusState.type || 'idle');
+        }
+        if (Array.isArray(uiState.logs)) {
+          logEntries = uiState.logs;
+          logEl.innerHTML = '';
+          for (const item of logEntries) renderLog(item);
+        }
+        if (uiState.stats) {
+          const stats = uiState.stats;
+          statsEl.style.display = stats.visible ? 'block' : 'none';
+          if (stats.recordCount != null) recordCountEl.textContent = stats.recordCount;
+          if (stats.totalSpend != null) totalSpendEl.textContent = stats.totalSpend;
+          if (stats.totalImpressions != null) totalImpressionsEl.textContent = stats.totalImpressions;
+          if (stats.totalClicks != null) totalClicksEl.textContent = stats.totalClicks;
+        }
+      }
     });
   }
 
   function saveSettings() {
     chrome.storage.local.set({
-      username: usernameInput.value
+      username: usernameInput.value,
+      projectName: projectNameInput.value,
+      buyerName: buyerNameInput.value
     });
   }
 
@@ -98,6 +163,8 @@
 
   collectBtn.addEventListener('click', async function() {
     const username = usernameInput.value.trim();
+    const projectName = projectNameInput.value.trim();
+    const buyerName = buyerNameInput.value.trim();
 
     saveSettings();
 
@@ -206,6 +273,8 @@
           const payload = {
             operator: username || 'unknown',
             username: username || '',
+            project_name: projectName || '',
+            buyer_name: buyerName || '',
             timestamp: collectedAtMinute,
             data: collectedData
           };
@@ -318,10 +387,14 @@
 
   clearBtn.addEventListener('click', function() {
     logEl.innerHTML = '';
+    logEntries = [];
     addLog('日志已清空', 'info');
+    persistUIState();
   });
 
   usernameInput.addEventListener('change', saveSettings);
+  projectNameInput.addEventListener('change', saveSettings);
+  buyerNameInput.addEventListener('change', saveSettings);
 
   loadSettings();
   addLog('插件已就绪，请在 Facebook Ads Manager 页面使用', 'info');

@@ -157,6 +157,8 @@ function buildFieldMapping(fieldsItems) {
     complete_registrations: pickField(fieldsIndex, ['complete_registrations', 'complete_registration', '完成注册次数', '注册完成次数']),
     operator: pickField(fieldsIndex, ['operator', '操作人', '操作者', '采集人']),
     username: pickField(fieldsIndex, ['username', 'user', '用户名', '用户']),
+    project_name: pickField(fieldsIndex, ['project_name', 'project', '项目名称', '项目']),
+    buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
     date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期'])
@@ -179,6 +181,8 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
   setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
   setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
+  setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
+  setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
@@ -225,7 +229,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { operator, username, timestamp, data } = req.body || {};
+  const { operator, username, project_name, buyer_name, timestamp, data } = req.body || {};
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -260,6 +264,8 @@ module.exports = async function handler(req, res) {
             ...record,
             operator: operator,
             username: username || operator,
+            project_name: project_name,
+            buyer_name: buyer_name,
             timestamp: timestamp
           },
           fieldMapping,
