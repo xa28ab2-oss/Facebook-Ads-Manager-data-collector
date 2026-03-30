@@ -85,6 +85,27 @@ function setBitableFieldValue(fields, fieldInfo, value, kind) {
   fields[fieldInfo.fieldName] = value == null ? '' : String(value);
 }
 
+function formatDate(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getYesterdayDateString() {
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  return formatDate(yesterday);
+}
+
+function extractDateRange(record) {
+  const raw = record && record.raw_fields ? record.raw_fields : {};
+  return {
+    date_start: record.date_start || raw.date_start || '',
+    date_stop: record.date_stop || raw.date_stop || ''
+  };
+}
+
 function buildSourceValueMap(record) {
   const map = new Map();
   if (!record || typeof record !== 'object') return map;
@@ -239,6 +260,20 @@ module.exports = async function handler(req, res) {
 
   if (data.length === 0) {
     return res.status(400).json({ error: 'No records to upload' });
+  }
+
+  const expectedDate = getYesterdayDateString();
+  const invalidRecord = data.find((record) => {
+    const range = extractDateRange(record);
+    return range.date_start !== expectedDate || range.date_stop !== expectedDate;
+  });
+  if (invalidRecord) {
+    const range = extractDateRange(invalidRecord);
+    return res.status(400).json({
+      error: 'Invalid date range',
+      expected: expectedDate,
+      actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+    });
   }
 
   if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_TABLE_ID) {

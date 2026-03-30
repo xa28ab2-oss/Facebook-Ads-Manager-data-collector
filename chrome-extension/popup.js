@@ -64,6 +64,27 @@
     persistUIState();
   }
 
+  function formatDate(value) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function getYesterdayDateString() {
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    return formatDate(yesterday);
+  }
+
+  function extractDateRange(record) {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    return {
+      date_start: record.date_start || raw.date_start || '',
+      date_stop: record.date_stop || raw.date_stop || ''
+    };
+  }
+
   function persistUIState() {
     chrome.storage.local.set({
       uiState: {
@@ -251,6 +272,20 @@
             if (response && response.error) {
               addLog('采集错误: ' + response.error, 'error');
             }
+            await sendToBackground({ action: 'stopCollection' });
+            collectBtn.disabled = false;
+            return;
+          }
+
+          const expectedDate = getYesterdayDateString();
+          const invalidRecord = collectedData.find((record) => {
+            const range = extractDateRange(record);
+            return range.date_start !== expectedDate || range.date_stop !== expectedDate;
+          });
+          if (invalidRecord) {
+            const range = extractDateRange(invalidRecord);
+            updateStatus('日期不符合要求，已停止上传', 'error');
+            addLog(`日期校验失败: 需要 ${expectedDate}，实际 ${range.date_start || '-'} ~ ${range.date_stop || '-'}`, 'error');
             await sendToBackground({ action: 'stopCollection' });
             collectBtn.disabled = false;
             return;
