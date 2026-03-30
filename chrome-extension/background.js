@@ -261,21 +261,7 @@ function extractFacebookInsightsData(data) {
       if (!hasMetricColumns) continue;
 
       recordKeptCount += 1;
-      const totalId = campaignId ? String(campaignId) : 'TOTAL';
-      const friendly = campaignNameById.get(totalId);
       records.push({
-        campaign_id: totalId,
-        campaign_name: friendly ? `${friendly} (${totalId})` : `TOTAL (${totalId})`,
-        reach: reach,
-        spend: spend,
-        budget: budget,
-        impressions: impressions,
-        clicks: clicks,
-        results: results,
-        cost_per_result: costPerResult,
-        complete_registrations: completeRegistrations,
-        date_start: String(dateStart),
-        date_stop: String(dateStop),
         raw_fields: { ...dimensionByName, ...atomicByName }
       });
     }
@@ -312,9 +298,16 @@ function extractAdData(data) {
 
 function upsertRecords(records) {
   for (const record of records) {
-    const idx = collectedRecords.findIndex(
-      (r) => r.campaign_id === record.campaign_id && r.date_start === record.date_start && r.date_stop === record.date_stop
-    );
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    const dateStart = record.date_start || raw.date_start || '';
+    const dateStop = record.date_stop || raw.date_stop || '';
+    const key = `${dateStart}__${dateStop}`;
+    const idx = collectedRecords.findIndex((r) => {
+      const rRaw = r && r.raw_fields ? r.raw_fields : {};
+      const rDateStart = r.date_start || rRaw.date_start || '';
+      const rDateStop = r.date_stop || rRaw.date_stop || '';
+      return `${rDateStart}__${rDateStop}` === key;
+    });
     if (idx === -1) {
       collectedRecords.push(record);
     } else {
