@@ -221,16 +221,19 @@ function extractFacebookInsightsData(data) {
         atomicByName[name] = atomicValues[i];
       }
 
-      const campaignId =
-        dimensionValues[dimensionIndex.campaign_id] ||
-        dimensionValues[dimensionIndex.adset_id] ||
-        dimensionValues[dimensionIndex.ad_id] ||
-        '';
+      const campaignValue = dimensionValues[dimensionIndex.campaign_id] || '';
+      const adsetValue = dimensionValues[dimensionIndex.adset_id] || '';
+      const adValue = dimensionValues[dimensionIndex.ad_id] || '';
+      const hasEntityValue = Boolean(campaignValue || adsetValue || adValue);
+      const campaignId = campaignValue || adsetValue || adValue || '';
       const objective = dimensionValues[dimensionIndex.objective] || '';
       const dateStart = dimensionValues[dimensionIndex.date_start] || '';
       const dateStop = dimensionValues[dimensionIndex.date_stop] || '';
 
-      if (!campaignId) continue;
+      if (hasEntityValue) continue;
+      if (!campaignId) {
+        if (!dateStart && !dateStop) continue;
+      }
       recordCandidateCount += 1;
 
       const reach = pickAtomicValue(atomicByName, ['reach']);
@@ -258,10 +261,11 @@ function extractFacebookInsightsData(data) {
       if (!hasMetricColumns) continue;
 
       recordKeptCount += 1;
-      const friendly = campaignNameById.get(String(campaignId));
+      const totalId = campaignId ? String(campaignId) : 'TOTAL';
+      const friendly = campaignNameById.get(totalId);
       records.push({
-        campaign_id: String(campaignId),
-        campaign_name: (friendly ? `${friendly}` : `${objective}`) + ` (${campaignId})`,
+        campaign_id: totalId,
+        campaign_name: friendly ? `${friendly} (${totalId})` : `TOTAL (${totalId})`,
         reach: reach,
         spend: spend,
         budget: budget,
