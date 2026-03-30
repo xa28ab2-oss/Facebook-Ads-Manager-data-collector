@@ -4,7 +4,6 @@
   const clearBtn = document.getElementById('clearBtn');
   const statsEl = document.getElementById('stats');
   const logEl = document.getElementById('log');
-  const usernameInput = document.getElementById('username');
   const projectNameInput = document.getElementById('projectName');
   const buyerNameInput = document.getElementById('buyerName');
   const recordCountEl = document.getElementById('recordCount');
@@ -82,8 +81,7 @@
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['username', 'projectName', 'buyerName', 'uiState'], function(result) {
-      if (result.username) usernameInput.value = result.username;
+    chrome.storage.local.get(['projectName', 'buyerName', 'uiState'], function(result) {
       if (result.projectName) projectNameInput.value = result.projectName;
       if (result.buyerName) buyerNameInput.value = result.buyerName;
       if (result.uiState) {
@@ -112,7 +110,6 @@
 
   function saveSettings() {
     chrome.storage.local.set({
-      username: usernameInput.value,
       projectName: projectNameInput.value,
       buyerName: buyerNameInput.value
     });
@@ -162,7 +159,6 @@
   }
 
   collectBtn.addEventListener('click', async function() {
-    const username = usernameInput.value.trim();
     const projectName = projectNameInput.value.trim();
     const buyerName = buyerNameInput.value.trim();
 
@@ -271,8 +267,7 @@
           const collectedAt = Date.now();
           const collectedAtMinute = Math.floor(collectedAt / 60000) * 60000;
           const payload = {
-            operator: username || 'unknown',
-            username: username || '',
+            operator: 'unknown',
             project_name: projectName || '',
             buyer_name: buyerName || '',
             timestamp: collectedAtMinute,
@@ -392,7 +387,6 @@
     persistUIState();
   });
 
-  usernameInput.addEventListener('change', saveSettings);
   projectNameInput.addEventListener('change', saveSettings);
   buyerNameInput.addEventListener('change', saveSettings);
 
