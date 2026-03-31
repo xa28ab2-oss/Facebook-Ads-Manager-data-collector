@@ -258,18 +258,26 @@ function extractFacebookInsightsData(data) {
         const existing = aggregateByDateKey.get(dateKey) || {
           actionCount: 0,
           actionCostTotal: 0,
-          actionCostHasValue: false
+          actionCostHasValue: false,
+          actionCountModeled: false,
+          actionCostModeled: false
         };
         const actionKey = 'actions:onsite_conversion.messaging_conversation_started_7d';
         const costKey = 'cost_per_action_type:onsite_conversion.messaging_conversation_started_7d';
+        const actionRaw = normalizeValue(actionByName[actionKey]);
+        const costRaw = normalizeValue(actionByName[costKey]);
         const actionCount = toNumberValue(actionByName[actionKey]);
         if (actionCount !== null) {
           existing.actionCount += actionCount;
+        } else if (actionRaw === 'modeled') {
+          existing.actionCountModeled = true;
         }
         const actionCost = toNumberValue(actionByName[costKey]);
         if (actionCount !== null && actionCost !== null) {
           existing.actionCostTotal += actionCount * actionCost;
           existing.actionCostHasValue = true;
+        } else if (costRaw === 'modeled') {
+          existing.actionCostModeled = true;
         }
         aggregateByDateKey.set(dateKey, existing);
         continue;
@@ -317,10 +325,14 @@ function extractFacebookInsightsData(data) {
     if (!aggregate) continue;
     if (aggregate.actionCount > 0) {
       raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(aggregate.actionCount);
+    } else if (aggregate.actionCountModeled) {
+      raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
     }
     if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
       const avgCost = aggregate.actionCostTotal / aggregate.actionCount;
       raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
+    } else if (aggregate.actionCostModeled) {
+      raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
     }
     record.raw_fields = raw;
   }
