@@ -14,6 +14,7 @@ let datasetRowCount = 0;
 let recordCandidateCount = 0;
 let recordKeptCount = 0;
 let collectingReady = false;
+let actionAggregateByDateKey = new Map();
 
 function log(...args) {
   console.log('[Facebook Ads Collector BG]', ...args);
@@ -91,6 +92,36 @@ function toNumberValue(value) {
   if (s === null) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function applyActionAggregate(raw, aggregate) {
+  if (!raw || !aggregate) return;
+  if (aggregate.actionCount > 0) {
+    raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(aggregate.actionCount);
+  } else if (aggregate.actionCountModeled) {
+    raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
+  }
+  if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
+    const avgCost = aggregate.actionCostTotal / aggregate.actionCount;
+    raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
+  } else if (aggregate.actionCostModeled) {
+    raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
+  }
+}
+
+function updateSummaryRecordsByDateKey(dateKey) {
+  if (!dateKey) return;
+  const aggregate = actionAggregateByDateKey.get(dateKey);
+  if (!aggregate) return;
+  for (let i = 0; i < collectedRecords.length; i++) {
+    const record = collectedRecords[i];
+    if (!record || !record.raw_fields) continue;
+    const raw = record.raw_fields;
+    const recordKey = `${raw.date_start || ''}__${raw.date_stop || ''}`;
+    if (recordKey !== dateKey) continue;
+    applyActionAggregate(raw, aggregate);
+    collectedRecords[i] = { ...record, raw_fields: raw };
+  }
 }
 
 function isAllDigits(value) {
@@ -189,7 +220,6 @@ function hasAnyMetricColumn(atomicColumns) {
 function extractFacebookInsightsData(data) {
   const records = [];
   if (!data || !data.data || !Array.isArray(data.data)) return records;
-  const aggregateByDateKey = new Map();
 
   for (const dataset of data.data) {
     if (!dataset || !dataset.headers || !dataset.rows) continue;
@@ -255,7 +285,7 @@ function extractFacebookInsightsData(data) {
 
       const dateKey = `${dateStart}__${dateStop}`;
       if (hasEntityValue) {
-        const existing = aggregateByDateKey.get(dateKey) || {
+        const existing = actionAggregateByDateKey.get(dateKey) || {
           actionCount: 0,
           actionCostTotal: 0,
           actionCostHasValue: false,
@@ -279,7 +309,8 @@ function extractFacebookInsightsData(data) {
         } else if (costRaw === 'modeled') {
           existing.actionCostModeled = true;
         }
-        aggregateByDateKey.set(dateKey, existing);
+        actionAggregateByDateKey.set(dateKey, existing);
+        updateSummaryRecordsByDateKey(dateKey);
         continue;
       }
       if (!campaignId) {
@@ -312,29 +343,14 @@ function extractFacebookInsightsData(data) {
       if (!hasMetricColumns) continue;
 
       recordKeptCount += 1;
+      const aggregate = actionAggregateByDateKey.get(dateKey);
+      if (aggregate) {
+        applyActionAggregate(actionByName, aggregate);
+      }
       records.push({
         raw_fields: { ...dimensionByName, ...atomicByName, ...actionByName }
       });
     }
-  }
-
-  for (const record of records) {
-    const raw = record && record.raw_fields ? record.raw_fields : {};
-    const dateKey = `${raw.date_start || ''}__${raw.date_stop || ''}`;
-    const aggregate = aggregateByDateKey.get(dateKey);
-    if (!aggregate) continue;
-    if (aggregate.actionCount > 0) {
-      raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(aggregate.actionCount);
-    } else if (aggregate.actionCountModeled) {
-      raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
-    }
-    if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
-      const avgCost = aggregate.actionCostTotal / aggregate.actionCount;
-      raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
-    } else if (aggregate.actionCostModeled) {
-      raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
-    }
-    record.raw_fields = raw;
   }
 
   return records;
@@ -404,6 +420,7 @@ async function startCollecting(tabId) {
   recordCandidateCount = 0;
   recordKeptCount = 0;
   collectingReady = false;
+  actionAggregateByDateKey = new Map();
 
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
