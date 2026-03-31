@@ -444,8 +444,12 @@
     }
   });
 
-  projectNameInput.addEventListener('change', saveSettings);
-  buyerNameInput.addEventListener('change', saveSettings);
+  if (projectNameInput) {
+    projectNameInput.addEventListener('change', saveSettings);
+  }
+  if (buyerNameInput) {
+    buyerNameInput.addEventListener('change', saveSettings);
+  }
   if (refreshOptionsBtn) {
     refreshOptionsBtn.addEventListener('click', function() {
       const selectedProject = projectNameInput.value || '';
