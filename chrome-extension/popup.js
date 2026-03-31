@@ -6,6 +6,7 @@
   const logEl = document.getElementById('log');
   const projectNameInput = document.getElementById('projectName');
   const buyerNameInput = document.getElementById('buyerName');
+  const refreshOptionsBtn = document.getElementById('refreshOptionsBtn');
   const recordCountEl = document.getElementById('recordCount');
   const totalSpendEl = document.getElementById('totalSpend');
   const totalImpressionsEl = document.getElementById('totalImpressions');
@@ -467,6 +468,12 @@
 
   projectNameInput.addEventListener('change', saveSettings);
   buyerNameInput.addEventListener('change', saveSettings);
+  refreshOptionsBtn.addEventListener('click', function() {
+    const selectedProject = projectNameInput.value || '';
+    const selectedBuyer = buyerNameInput.value || '';
+    addLog('手动刷新下拉选项...');
+    loadOptions(selectedProject, selectedBuyer);
+  });
 
   loadSettings();
   addLog('插件已就绪，请在 Facebook Ads Manager 页面使用', 'info');
