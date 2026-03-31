@@ -458,7 +458,7 @@
       loadOptions(selectedProject, selectedBuyer);
     });
   }
-  if (toggleLogBtn) {
+  if (toggleLogBtn && logEl) {
     toggleLogBtn.addEventListener('click', function() {
       const isVisible = logEl.style.display !== 'none';
       logEl.style.display = isVisible ? 'none' : 'block';
