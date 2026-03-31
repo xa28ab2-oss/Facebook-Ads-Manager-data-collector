@@ -96,15 +96,20 @@ function toNumberValue(value) {
 
 function applyActionAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
-  if (aggregate.actionCount > 0) {
-    raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(aggregate.actionCount);
+  let computedCount = aggregate.actionCount;
+  if (computedCount <= 0) {
+    const fallbackCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
+    if (fallbackCount !== null) computedCount = fallbackCount;
+  }
+  if (computedCount > 0) {
+    raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(computedCount);
   } else if (aggregate.actionCountModeled) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
   }
-  if (aggregate.actionCount > 0) {
+  if (computedCount > 0) {
     const spend = toNumberValue(raw.spend);
     if (spend !== null) {
-      const avgCost = spend / aggregate.actionCount;
+      const avgCost = spend / computedCount;
       raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
     }
   } else if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
