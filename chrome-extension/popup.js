@@ -85,6 +85,46 @@
     };
   }
 
+  function getOptionsEndpoint() {
+    return apiEndpoint.replace(/\/api\/upload\/?$/, '/api/options');
+  }
+
+  function setSelectOptions(selectEl, options, placeholder, selectedValue) {
+    const value = selectedValue || selectEl.value || '';
+    const items = Array.isArray(options) ? options.filter(Boolean) : [];
+    if (value && !items.includes(value)) items.unshift(value);
+    selectEl.innerHTML = '';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = placeholder;
+    selectEl.appendChild(empty);
+    for (const item of items) {
+      const option = document.createElement('option');
+      option.value = item;
+      option.textContent = item;
+      selectEl.appendChild(option);
+    }
+    selectEl.value = value && items.includes(value) ? value : '';
+  }
+
+  async function loadOptions(selectedProject, selectedBuyer) {
+    try {
+      const response = await fetch(getOptionsEndpoint(), { method: 'GET' });
+      if (!response.ok) {
+        addLog('配置表读取失败: ' + response.status, 'error');
+        return;
+      }
+      const data = await response.json();
+      const projects = data && Array.isArray(data.projects) ? data.projects : [];
+      const buyers = data && Array.isArray(data.buyers) ? data.buyers : [];
+      setSelectOptions(projectNameInput, projects, '请选择项目', selectedProject);
+      setSelectOptions(buyerNameInput, buyers, '请选择投手', selectedBuyer);
+    } catch (e) {
+      const message = e && e.message ? e.message : String(e);
+      addLog('配置表读取失败: ' + message, 'error');
+    }
+  }
+
   function persistUIState() {
     chrome.storage.local.set({
       uiState: {
@@ -103,8 +143,11 @@
 
   function loadSettings() {
     chrome.storage.local.get(['projectName', 'buyerName', 'uiState'], function(result) {
-      if (result.projectName) projectNameInput.value = result.projectName;
-      if (result.buyerName) buyerNameInput.value = result.buyerName;
+      const savedProject = result.projectName || '';
+      const savedBuyer = result.buyerName || '';
+      if (savedProject) projectNameInput.value = savedProject;
+      if (savedBuyer) buyerNameInput.value = savedBuyer;
+      loadOptions(savedProject, savedBuyer);
       if (result.uiState) {
         const uiState = result.uiState;
         if (uiState.status) {
