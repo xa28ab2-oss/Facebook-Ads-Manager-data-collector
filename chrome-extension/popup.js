@@ -93,7 +93,6 @@
   function setSelectOptions(selectEl, options, placeholder, selectedValue) {
     const value = selectedValue || selectEl.value || '';
     const items = Array.isArray(options) ? options.filter(Boolean) : [];
-    if (value && !items.includes(value)) items.unshift(value);
     selectEl.innerHTML = '';
     const empty = document.createElement('option');
     empty.value = '';
@@ -120,6 +119,9 @@
       const buyers = data && Array.isArray(data.buyers) ? data.buyers : [];
       setSelectOptions(projectNameInput, projects, '请选择项目', selectedProject);
       setSelectOptions(buyerNameInput, buyers, '请选择投手', selectedBuyer);
+      if (selectedProject && !projects.includes(selectedProject)) projectNameInput.value = '';
+      if (selectedBuyer && !buyers.includes(selectedBuyer)) buyerNameInput.value = '';
+      saveSettings();
     } catch (e) {
       const message = e && e.message ? e.message : String(e);
       addLog('配置表读取失败: ' + message, 'error');

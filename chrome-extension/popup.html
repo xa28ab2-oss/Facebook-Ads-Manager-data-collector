@@ -128,7 +128,8 @@
       color: #888;
       margin-bottom: 4px;
     }
-    .input-group input {
+    .input-group input,
+    .input-group select {
       width: 100%;
       padding: 8px;
       border: 1px solid #444;
@@ -137,9 +138,29 @@
       color: #fff;
       font-size: 13px;
     }
-    .input-group input:focus {
+    .input-group input:focus,
+    .input-group select:focus {
       outline: none;
       border-color: #1877f2;
+    }
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+    .action-row {
+      display: flex;
+      gap: 8px;
+    }
+    .action-row .btn-primary {
+      flex: 1;
     }
   </style>
 </head>
@@ -161,7 +182,10 @@
     <select id="buyerName"></select>
   </div>
 
-  <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
+  <div class="action-row">
+    <button class="btn btn-secondary btn-icon" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
+    <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
+  </div>
   <button class="btn btn-secondary" id="clearBtn">清空日志</button>
 
   <div class="stats" id="stats" style="display: none;">
