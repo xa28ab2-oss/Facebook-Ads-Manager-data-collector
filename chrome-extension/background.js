@@ -228,6 +228,21 @@ function extractFacebookInsightsData(data) {
         if (!name) continue;
         atomicByName[name] = atomicValues[i];
       }
+      const actionByName = {};
+      const actionValues = row.action_values || [];
+      for (let i = 0; i < actionValues.length; i++) {
+        const entry = actionValues[i];
+        if (!entry || typeof entry !== 'object') continue;
+        const types = entry.types;
+        const values = entry.values;
+        if (Array.isArray(types) && Array.isArray(values) && types.length === values.length) {
+          for (let j = 0; j < types.length; j++) {
+            const typeName = types[j];
+            if (!typeName) continue;
+            actionByName[typeName] = values[j];
+          }
+        }
+      }
 
       const campaignValue = dimensionValues[dimensionIndex.campaign_id] || '';
       const adsetValue = dimensionValues[dimensionIndex.adset_id] || '';
@@ -247,11 +262,11 @@ function extractFacebookInsightsData(data) {
         };
         const actionKey = 'actions:onsite_conversion.messaging_conversation_started_7d';
         const costKey = 'cost_per_action_type:onsite_conversion.messaging_conversation_started_7d';
-        const actionCount = toNumberValue(atomicByName[actionKey]);
+        const actionCount = toNumberValue(actionByName[actionKey]);
         if (actionCount !== null) {
           existing.actionCount += actionCount;
         }
-        const actionCost = toNumberValue(atomicByName[costKey]);
+        const actionCost = toNumberValue(actionByName[costKey]);
         if (actionCount !== null && actionCost !== null) {
           existing.actionCostTotal += actionCount * actionCost;
           existing.actionCostHasValue = true;
@@ -290,7 +305,7 @@ function extractFacebookInsightsData(data) {
 
       recordKeptCount += 1;
       records.push({
-        raw_fields: { ...dimensionByName, ...atomicByName }
+        raw_fields: { ...dimensionByName, ...atomicByName, ...actionByName }
       });
     }
   }
