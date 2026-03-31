@@ -21,6 +21,30 @@
       text-align: center;
       margin-bottom: 16px;
     }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid #3d3d54;
+      border-radius: 8px;
+      background: #2d2d44;
+      color: #aaa;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .icon-btn:hover {
+      background: #3d3d54;
+      color: #fff;
+    }
     .header h1 {
       font-size: 16px;
       color: #1877f2;
@@ -143,18 +167,6 @@
       outline: none;
       border-color: #1877f2;
     }
-    .btn-icon {
-      width: 32px;
-      height: 32px;
-      padding: 0;
-      border-radius: 8px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      line-height: 1;
-      margin-bottom: 12px;
-    }
     .action-row {
       display: flex;
       gap: 8px;
@@ -165,6 +177,11 @@
   </style>
 </head>
 <body>
+  <div class="toolbar">
+    <button class="icon-btn" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
+    <button class="icon-btn" id="toggleLogBtn" title="显示日志">📝</button>
+  </div>
+
   <div class="header">
     <h1>📊 Facebook Ads 数据采集</h1>
     <p>采集广告数据并上传到 Lark 多维表格</p>
@@ -183,10 +200,8 @@
   </div>
 
   <div class="action-row">
-    <button class="btn btn-secondary btn-icon" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
     <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
   </div>
-  <button class="btn btn-secondary" id="clearBtn">清空日志</button>
 
   <div class="stats" id="stats" style="display: none;">
     <div class="stats-row">
@@ -207,7 +222,7 @@
     </div>
   </div>
 
-  <div class="log" id="log"></div>
+  <div class="log" id="log" style="display: none;"></div>
 
   <script src="popup.js"></script>
 </body>

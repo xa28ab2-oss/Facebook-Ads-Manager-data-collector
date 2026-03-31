@@ -1,7 +1,7 @@
 (function() {
   const statusEl = document.getElementById('status');
   const collectBtn = document.getElementById('collectBtn');
-  const clearBtn = document.getElementById('clearBtn');
+  const toggleLogBtn = document.getElementById('toggleLogBtn');
   const statsEl = document.getElementById('stats');
   const logEl = document.getElementById('log');
   const projectNameInput = document.getElementById('projectName');
@@ -139,7 +139,8 @@
           totalSpend: totalSpendEl.textContent,
           totalImpressions: totalImpressionsEl.textContent,
           totalClicks: totalClicksEl.textContent
-        }
+        },
+        logVisible: logEl.style.display !== 'none'
       }
     });
   }
@@ -170,6 +171,9 @@
           if (stats.totalSpend != null) totalSpendEl.textContent = stats.totalSpend;
           if (stats.totalImpressions != null) totalImpressionsEl.textContent = stats.totalImpressions;
           if (stats.totalClicks != null) totalClicksEl.textContent = stats.totalClicks;
+        }
+        if (typeof uiState.logVisible === 'boolean') {
+          logEl.style.display = uiState.logVisible ? 'block' : 'none';
         }
       }
     });
@@ -461,13 +465,6 @@
     }
   });
 
-  clearBtn.addEventListener('click', function() {
-    logEl.innerHTML = '';
-    logEntries = [];
-    addLog('日志已清空', 'info');
-    persistUIState();
-  });
-
   projectNameInput.addEventListener('change', saveSettings);
   buyerNameInput.addEventListener('change', saveSettings);
   refreshOptionsBtn.addEventListener('click', function() {
@@ -475,6 +472,11 @@
     const selectedBuyer = buyerNameInput.value || '';
     addLog('手动刷新下拉选项...');
     loadOptions(selectedProject, selectedBuyer);
+  });
+  toggleLogBtn.addEventListener('click', function() {
+    const isVisible = logEl.style.display !== 'none';
+    logEl.style.display = isVisible ? 'none' : 'block';
+    persistUIState();
   });
 
   loadSettings();
