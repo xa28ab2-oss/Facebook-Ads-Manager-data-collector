@@ -412,14 +412,15 @@ function extractFacebookInsightsData(data) {
       recordKeptCount += 1;
       const aggregate = actionAggregateByDateKey.get(dateKey);
       const resultAggregate = resultAggregateByDateKey.get(dateKey);
+      const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName };
       if (aggregate) {
-        applyActionAggregate(actionByName, aggregate);
+        applyActionAggregate(rawFields, aggregate);
       }
       if (resultAggregate) {
-        applyResultAggregate(actionByName, resultAggregate);
+        applyResultAggregate(rawFields, resultAggregate);
       }
       records.push({
-        raw_fields: { ...dimensionByName, ...atomicByName, ...actionByName }
+        raw_fields: rawFields
       });
     }
   }
