@@ -86,6 +86,13 @@ function normalizeValue(value) {
   return s;
 }
 
+function toNumberValue(value) {
+  const s = normalizeValue(value);
+  if (s === null) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 function isAllDigits(value) {
   if (!value) return false;
   for (let i = 0; i < value.length; i++) {
@@ -182,6 +189,7 @@ function hasAnyMetricColumn(atomicColumns) {
 function extractFacebookInsightsData(data) {
   const records = [];
   if (!data || !data.data || !Array.isArray(data.data)) return records;
+  const aggregateByDateKey = new Map();
 
   for (const dataset of data.data) {
     if (!dataset || !dataset.headers || !dataset.rows) continue;
@@ -230,7 +238,27 @@ function extractFacebookInsightsData(data) {
       const dateStart = dimensionValues[dimensionIndex.date_start] || '';
       const dateStop = dimensionValues[dimensionIndex.date_stop] || '';
 
-      if (hasEntityValue) continue;
+      const dateKey = `${dateStart}__${dateStop}`;
+      if (hasEntityValue) {
+        const existing = aggregateByDateKey.get(dateKey) || {
+          actionCount: 0,
+          actionCostTotal: 0,
+          actionCostHasValue: false
+        };
+        const actionKey = 'actions:onsite_conversion.messaging_conversation_started_7d';
+        const costKey = 'cost_per_action_type:onsite_conversion.messaging_conversation_started_7d';
+        const actionCount = toNumberValue(atomicByName[actionKey]);
+        if (actionCount !== null) {
+          existing.actionCount += actionCount;
+        }
+        const actionCost = toNumberValue(atomicByName[costKey]);
+        if (actionCount !== null && actionCost !== null) {
+          existing.actionCostTotal += actionCount * actionCost;
+          existing.actionCostHasValue = true;
+        }
+        aggregateByDateKey.set(dateKey, existing);
+        continue;
+      }
       if (!campaignId) {
         if (!dateStart && !dateStop) continue;
       }
@@ -265,6 +293,21 @@ function extractFacebookInsightsData(data) {
         raw_fields: { ...dimensionByName, ...atomicByName }
       });
     }
+  }
+
+  for (const record of records) {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    const dateKey = `${raw.date_start || ''}__${raw.date_stop || ''}`;
+    const aggregate = aggregateByDateKey.get(dateKey);
+    if (!aggregate) continue;
+    if (aggregate.actionCount > 0) {
+      raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(aggregate.actionCount);
+    }
+    if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
+      const avgCost = aggregate.actionCostTotal / aggregate.actionCount;
+      raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
+    }
+    record.raw_fields = raw;
   }
 
   return records;
