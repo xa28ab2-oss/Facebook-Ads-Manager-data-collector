@@ -2,15 +2,10 @@
   const statusEl = document.getElementById('status');
   const collectBtn = document.getElementById('collectBtn');
   const toggleLogBtn = document.getElementById('toggleLogBtn');
-  const statsEl = document.getElementById('stats');
   const logEl = document.getElementById('log');
   const projectNameInput = document.getElementById('projectName');
   const buyerNameInput = document.getElementById('buyerName');
   const refreshOptionsBtn = document.getElementById('refreshOptionsBtn');
-  const recordCountEl = document.getElementById('recordCount');
-  const totalSpendEl = document.getElementById('totalSpend');
-  const totalImpressionsEl = document.getElementById('totalImpressions');
-  const totalClicksEl = document.getElementById('totalClicks');
 
   const apiEndpoint = 'https://facebook-ads-manager-data-collector.vercel.app/api/upload';
 
@@ -47,21 +42,6 @@
     } else {
       renderLog(entry);
     }
-    persistUIState();
-  }
-
-  function updateStats(data) {
-    statsEl.style.display = 'block';
-    recordCountEl.textContent = data.length;
-    const totals = data.reduce((acc, item) => {
-      acc.spend += parseFloat(item.spend) || 0;
-      acc.impressions += parseInt(item.impressions) || 0;
-      acc.clicks += parseInt(item.clicks) || 0;
-      return acc;
-    }, { spend: 0, impressions: 0, clicks: 0 });
-    totalSpendEl.textContent = '$' + totals.spend.toFixed(2);
-    totalImpressionsEl.textContent = totals.impressions.toLocaleString();
-    totalClicksEl.textContent = totals.clicks.toLocaleString();
     persistUIState();
   }
 
@@ -109,6 +89,8 @@
 
   async function loadOptions(selectedProject, selectedBuyer) {
     try {
+      updateStatus('插件加载中...', 'collecting');
+      collectBtn.disabled = true;
       const response = await fetch(getOptionsEndpoint(), { method: 'GET' });
       if (!response.ok) {
         addLog('配置表读取失败: ' + response.status, 'error');
@@ -125,6 +107,9 @@
     } catch (e) {
       const message = e && e.message ? e.message : String(e);
       addLog('配置表读取失败: ' + message, 'error');
+    } finally {
+      updateStatus('等待采集...', 'idle');
+      collectBtn.disabled = false;
     }
   }
 
@@ -133,13 +118,6 @@
       uiState: {
         status: statusState,
         logs: logEntries,
-        stats: {
-          visible: statsEl.style.display !== 'none',
-          recordCount: recordCountEl.textContent,
-          totalSpend: totalSpendEl.textContent,
-          totalImpressions: totalImpressionsEl.textContent,
-          totalClicks: totalClicksEl.textContent
-        },
         logVisible: logEl.style.display !== 'none'
       }
     });
@@ -163,14 +141,6 @@
           logEntries = uiState.logs;
           logEl.innerHTML = '';
           for (const item of logEntries) renderLog(item);
-        }
-        if (uiState.stats) {
-          const stats = uiState.stats;
-          statsEl.style.display = stats.visible ? 'block' : 'none';
-          if (stats.recordCount != null) recordCountEl.textContent = stats.recordCount;
-          if (stats.totalSpend != null) totalSpendEl.textContent = stats.totalSpend;
-          if (stats.totalImpressions != null) totalImpressionsEl.textContent = stats.totalImpressions;
-          if (stats.totalClicks != null) totalClicksEl.textContent = stats.totalClicks;
         }
         if (typeof uiState.logVisible === 'boolean') {
           logEl.style.display = uiState.logVisible ? 'block' : 'none';
@@ -346,7 +316,6 @@
             addLog('采集数据(前3条): ' + JSON.stringify(sample));
           } catch (e) {}
 
-          updateStats(collectedData);
           updateStatus('正在上传数据...', 'collecting');
 
           const collectedAt = Date.now();
