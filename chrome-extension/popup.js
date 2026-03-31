@@ -70,6 +70,15 @@
     return apiEndpoint.replace(/\/api\/upload\/?$/, '/api/options');
   }
 
+  function validateSelections(projectName, buyerName) {
+    if (!projectName || !buyerName) {
+      updateStatus('请选择项目和投手', 'error');
+      addLog('未选择项目或投手，已停止上传', 'error');
+      return false;
+    }
+    return true;
+  }
+
   function setSelectOptions(selectEl, options, placeholder, selectedValue) {
     const value = selectedValue || selectEl.value || '';
     const items = Array.isArray(options) ? options.filter(Boolean) : [];
@@ -202,6 +211,7 @@
   collectBtn.addEventListener('click', async function() {
     const projectName = projectNameInput.value.trim();
     const buyerName = buyerNameInput.value.trim();
+    if (!validateSelections(projectName, buyerName)) return;
 
     saveSettings();
 

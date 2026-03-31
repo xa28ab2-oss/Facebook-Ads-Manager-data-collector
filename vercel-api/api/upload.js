@@ -262,6 +262,10 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'No records to upload' });
   }
 
+  if (!project_name || !buyer_name) {
+    return res.status(400).json({ error: 'Project and buyer are required' });
+  }
+
   const expectedDate = getYesterdayDateString();
   const invalidRecord = data.find((record) => {
     const range = extractDateRange(record);
