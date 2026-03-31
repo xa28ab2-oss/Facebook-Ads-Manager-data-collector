@@ -101,7 +101,13 @@ function applyActionAggregate(raw, aggregate) {
   } else if (aggregate.actionCountModeled) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
   }
-  if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
+  if (aggregate.actionCount > 0) {
+    const spend = toNumberValue(raw.spend);
+    if (spend !== null) {
+      const avgCost = spend / aggregate.actionCount;
+      raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
+    }
+  } else if (aggregate.actionCostHasValue && aggregate.actionCount > 0) {
     const avgCost = aggregate.actionCostTotal / aggregate.actionCount;
     raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
   } else if (aggregate.actionCostModeled) {
