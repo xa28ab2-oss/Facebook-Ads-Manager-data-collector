@@ -15,6 +15,7 @@ let recordCandidateCount = 0;
 let recordKeptCount = 0;
 let collectingReady = false;
 let actionAggregateByDateKey = new Map();
+let resultAggregateByDateKey = new Map();
 
 function log(...args) {
   console.log('[Facebook Ads Collector BG]', ...args);
@@ -120,17 +121,31 @@ function applyActionAggregate(raw, aggregate) {
   }
 }
 
+function applyResultAggregate(raw, aggregate) {
+  if (!raw || !aggregate) return;
+  if (aggregate.resultCount > 0) {
+    raw.results = String(aggregate.resultCount);
+  } else if (aggregate.resultModeled) {
+    raw.results = 'modeled';
+  }
+  if (aggregate.resultIndicator) {
+    raw.result_indicator = aggregate.resultIndicator;
+  }
+}
+
 function updateSummaryRecordsByDateKey(dateKey) {
   if (!dateKey) return;
   const aggregate = actionAggregateByDateKey.get(dateKey);
-  if (!aggregate) return;
+  const resultAggregate = resultAggregateByDateKey.get(dateKey);
+  if (!aggregate && !resultAggregate) return;
   for (let i = 0; i < collectedRecords.length; i++) {
     const record = collectedRecords[i];
     if (!record || !record.raw_fields) continue;
     const raw = record.raw_fields;
     const recordKey = `${raw.date_start || ''}__${raw.date_stop || ''}`;
     if (recordKey !== dateKey) continue;
-    applyActionAggregate(raw, aggregate);
+    if (aggregate) applyActionAggregate(raw, aggregate);
+    if (resultAggregate) applyResultAggregate(raw, resultAggregate);
     collectedRecords[i] = { ...record, raw_fields: raw };
   }
 }
@@ -284,6 +299,10 @@ function extractFacebookInsightsData(data) {
           }
         }
       }
+      const resultValues = row.result_values || [];
+      const resultIndicator = resultValues.length > 0 && resultValues[0] && resultValues[0].indicator
+        ? resultValues[0].indicator
+        : null;
 
       const campaignValue = dimensionValues[dimensionIndex.campaign_id] || '';
       const adsetValue = dimensionValues[dimensionIndex.adset_id] || '';
@@ -321,6 +340,33 @@ function extractFacebookInsightsData(data) {
           existing.actionCostModeled = true;
         }
         actionAggregateByDateKey.set(dateKey, existing);
+        if (resultIndicator && resultIndicator !== 'null') {
+          const resultExisting = resultAggregateByDateKey.get(dateKey) || {
+            resultCount: 0,
+            resultModeled: false,
+            resultIndicator: null
+          };
+          resultExisting.resultIndicator = resultExisting.resultIndicator || resultIndicator;
+          let resultValue = null;
+          if (resultIndicator === 'results') {
+            resultValue = actionByName.results;
+          } else if (typeof resultIndicator === 'string') {
+            resultValue = actionByName[resultIndicator];
+            if (resultValue === undefined && resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
+              resultValue = actionByName[resultIndicator] || actionByName['actions:onsite_conversion.messaging_conversation_started_7d'];
+            }
+          }
+          let numericResult = toNumberValue(resultValue);
+          if (numericResult === null && resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
+            numericResult = toNumberValue(atomicByName['onsite_conversion.messaging_conversation_started_7d']);
+          }
+          if (numericResult !== null) {
+            resultExisting.resultCount += numericResult;
+          } else if (normalizeValue(resultValue) === 'modeled') {
+            resultExisting.resultModeled = true;
+          }
+          resultAggregateByDateKey.set(dateKey, resultExisting);
+        }
         updateSummaryRecordsByDateKey(dateKey);
         continue;
       }
@@ -355,8 +401,12 @@ function extractFacebookInsightsData(data) {
 
       recordKeptCount += 1;
       const aggregate = actionAggregateByDateKey.get(dateKey);
+      const resultAggregate = resultAggregateByDateKey.get(dateKey);
       if (aggregate) {
         applyActionAggregate(actionByName, aggregate);
+      }
+      if (resultAggregate) {
+        applyResultAggregate(actionByName, resultAggregate);
       }
       records.push({
         raw_fields: { ...dimensionByName, ...atomicByName, ...actionByName }
@@ -432,6 +482,7 @@ async function startCollecting(tabId) {
   recordKeptCount = 0;
   collectingReady = false;
   actionAggregateByDateKey = new Map();
+  resultAggregateByDateKey = new Map();
 
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
