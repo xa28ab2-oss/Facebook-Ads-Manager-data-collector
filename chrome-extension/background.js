@@ -123,8 +123,18 @@ function applyActionAggregate(raw, aggregate) {
 
 function applyResultAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
-  if (aggregate.resultCount > 0) {
-    raw.results = String(aggregate.resultCount);
+  let computedResult = aggregate.resultCount;
+  if (computedResult <= 0) {
+    const indicator = aggregate.resultIndicator;
+    if (indicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
+      const fromActions = toNumberValue(raw['actions:onsite_conversion.messaging_conversation_started_7d']);
+      const fromOnsite = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
+      if (fromActions !== null) computedResult = fromActions;
+      else if (fromOnsite !== null) computedResult = fromOnsite;
+    }
+  }
+  if (computedResult > 0) {
+    raw.results = String(computedResult);
   } else if (aggregate.resultModeled) {
     raw.results = 'modeled';
   }
