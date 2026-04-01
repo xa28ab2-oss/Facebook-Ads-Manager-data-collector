@@ -102,12 +102,19 @@ function isIntegerish(value) {
 
 function applyActionAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
-  let computedCount = aggregate.actionCount;
-  if (computedCount <= 0) {
-    const fallbackCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
-    if (fallbackCount !== null) computedCount = fallbackCount;
-  }
   const spend = toNumberValue(raw.spend);
+  const resultIndicator = normalizeValue(raw.result_indicator);
+  const resultsValue = toNumberValue(raw.results);
+  const onsiteConversationCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
+
+  let computedCount = aggregate.actionCount;
+
+  if (resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d' && resultsValue !== null) {
+    computedCount = resultsValue;
+  } else if (onsiteConversationCount !== null) {
+    computedCount = onsiteConversationCount;
+  }
+
   const rawActionCount = toNumberValue(raw['actions:onsite_conversion.messaging_conversation_started_7d']);
   const rawActionCost = toNumberValue(raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d']);
   if (spend !== null && rawActionCount !== null && rawActionCost !== null) {
