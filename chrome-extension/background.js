@@ -95,6 +95,11 @@ function toNumberValue(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function isIntegerish(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  return Math.abs(value - Math.round(value)) < 1e-9;
+}
+
 function applyActionAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
   let computedCount = aggregate.actionCount;
@@ -102,13 +107,20 @@ function applyActionAggregate(raw, aggregate) {
     const fallbackCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
     if (fallbackCount !== null) computedCount = fallbackCount;
   }
+  const spend = toNumberValue(raw.spend);
+  const rawActionCount = toNumberValue(raw['actions:onsite_conversion.messaging_conversation_started_7d']);
+  const rawActionCost = toNumberValue(raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d']);
+  if (spend !== null && rawActionCount !== null && rawActionCost !== null) {
+    if (!isIntegerish(rawActionCount) && isIntegerish(rawActionCost) && rawActionCost > 0) {
+      computedCount = rawActionCost;
+    }
+  }
   if (computedCount > 0) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(computedCount);
   } else if (aggregate.actionCountModeled) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
   }
   if (computedCount > 0) {
-    const spend = toNumberValue(raw.spend);
     if (spend !== null) {
       const avgCost = spend / computedCount;
       raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
