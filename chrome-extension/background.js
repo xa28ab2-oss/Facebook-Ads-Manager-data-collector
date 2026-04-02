@@ -95,32 +95,21 @@ function toNumberValue(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function isIntegerish(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
-  return Math.abs(value - Math.round(value)) < 1e-9;
+function buildActionMetricName(actionColumnName, metricTypeName) {
+  if (!metricTypeName) return null;
+  if (String(metricTypeName).includes(':')) return String(metricTypeName);
+  if (!actionColumnName) return String(metricTypeName);
+  if (actionColumnName === 'actions') return `actions:${metricTypeName}`;
+  if (actionColumnName === 'cost_per_action_type') return `cost_per_action_type:${metricTypeName}`;
+  return String(metricTypeName);
 }
 
 function applyActionAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
-  const spend = toNumberValue(raw.spend);
-  const resultIndicator = normalizeValue(raw.result_indicator);
-  const resultsValue = toNumberValue(raw.results);
-  const onsiteConversationCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
-
   let computedCount = aggregate.actionCount;
-
-  if (resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d' && resultsValue !== null) {
-    computedCount = resultsValue;
-  } else if (onsiteConversationCount !== null) {
-    computedCount = onsiteConversationCount;
-  }
-
-  const rawActionCount = toNumberValue(raw['actions:onsite_conversion.messaging_conversation_started_7d']);
-  const rawActionCost = toNumberValue(raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d']);
-  if (spend !== null && rawActionCount !== null && rawActionCost !== null) {
-    if (!isIntegerish(rawActionCount) && isIntegerish(rawActionCost) && rawActionCost > 0) {
-      computedCount = rawActionCost;
-    }
+  if (computedCount <= 0) {
+    const fallbackCount = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
+    if (fallbackCount !== null) computedCount = fallbackCount;
   }
   if (computedCount > 0) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = String(computedCount);
@@ -128,6 +117,7 @@ function applyActionAggregate(raw, aggregate) {
     raw['actions:onsite_conversion.messaging_conversation_started_7d'] = 'modeled';
   }
   if (computedCount > 0) {
+    const spend = toNumberValue(raw.spend);
     if (spend !== null) {
       const avgCost = spend / computedCount;
       raw['cost_per_action_type:onsite_conversion.messaging_conversation_started_7d'] = String(avgCost);
@@ -282,6 +272,7 @@ function extractFacebookInsightsData(data) {
     const headers = dataset.headers;
     const dimensions = headers.dimensions || [];
     const atomicColumns = headers.atomic_columns || [];
+    const actionColumns = headers.action_columns || [];
     datasetRowCount += Array.isArray(dataset.rows) ? dataset.rows.length : 0;
 
     if (!lastHeaders && hasAnyMetricColumn(atomicColumns)) {
@@ -318,13 +309,18 @@ function extractFacebookInsightsData(data) {
       for (let i = 0; i < actionValues.length; i++) {
         const entry = actionValues[i];
         if (!entry || typeof entry !== 'object') continue;
+        const actionColumnName = actionColumns[i] && actionColumns[i].name;
         const types = entry.types;
         const values = entry.values;
         if (Array.isArray(types) && Array.isArray(values) && types.length === values.length) {
           for (let j = 0; j < types.length; j++) {
             const typeName = types[j];
             if (!typeName) continue;
-            actionByName[typeName] = values[j];
+            const canonicalName = buildActionMetricName(actionColumnName, typeName);
+            if (canonicalName) actionByName[canonicalName] = values[j];
+            if (!Object.prototype.hasOwnProperty.call(actionByName, typeName)) {
+              actionByName[typeName] = values[j];
+            }
           }
         }
       }
