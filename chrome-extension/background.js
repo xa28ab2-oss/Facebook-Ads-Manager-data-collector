@@ -273,6 +273,7 @@ function extractFacebookInsightsData(data) {
     const dimensions = headers.dimensions || [];
     const atomicColumns = headers.atomic_columns || [];
     const actionColumns = headers.action_columns || [];
+    const resultColumns = headers.result_columns || [];
     datasetRowCount += Array.isArray(dataset.rows) ? dataset.rows.length : 0;
 
     if (!lastHeaders && hasAnyMetricColumn(atomicColumns)) {
@@ -325,9 +326,23 @@ function extractFacebookInsightsData(data) {
         }
       }
       const resultValues = row.result_values || [];
-      const resultIndicator = resultValues.length > 0 && resultValues[0] && resultValues[0].indicator
-        ? resultValues[0].indicator
-        : null;
+      const resultValueByColumn = {};
+      const resultIndicatorByColumn = {};
+      for (let i = 0; i < resultValues.length && i < resultColumns.length; i++) {
+        const entry = resultValues[i];
+        const columnName = resultColumns[i] && resultColumns[i].name;
+        if (!columnName || !entry || typeof entry !== 'object') continue;
+        if (Object.prototype.hasOwnProperty.call(entry, 'value')) {
+          resultValueByColumn[columnName] = entry.value;
+        }
+        if (Object.prototype.hasOwnProperty.call(entry, 'indicator')) {
+          resultIndicatorByColumn[columnName] = entry.indicator;
+        }
+      }
+      const resultIndicator =
+        normalizeValue(resultIndicatorByColumn.results) ||
+        normalizeValue(resultIndicatorByColumn.cost_per_result) ||
+        null;
 
       const campaignValue = dimensionValues[dimensionIndex.campaign_id] || '';
       const adsetValue = dimensionValues[dimensionIndex.adset_id] || '';
@@ -372,10 +387,8 @@ function extractFacebookInsightsData(data) {
             resultIndicator: null
           };
           resultExisting.resultIndicator = resultExisting.resultIndicator || resultIndicator;
-          let resultValue = null;
-          if (resultIndicator === 'results') {
-            resultValue = actionByName.results;
-          } else if (typeof resultIndicator === 'string') {
+          let resultValue = resultValueByColumn.results;
+          if (resultValue === undefined && typeof resultIndicator === 'string') {
             resultValue = actionByName[resultIndicator];
             if (resultValue === undefined && resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
               resultValue = actionByName[resultIndicator] || actionByName['actions:onsite_conversion.messaging_conversation_started_7d'];
@@ -427,7 +440,10 @@ function extractFacebookInsightsData(data) {
       recordKeptCount += 1;
       const aggregate = actionAggregateByDateKey.get(dateKey);
       const resultAggregate = resultAggregateByDateKey.get(dateKey);
-      const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName };
+      const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName, ...resultValueByColumn };
+      if (resultIndicator) {
+        rawFields.result_indicator = resultIndicator;
+      }
       if (aggregate) {
         applyActionAggregate(rawFields, aggregate);
       }
