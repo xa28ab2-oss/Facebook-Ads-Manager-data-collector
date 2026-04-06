@@ -1,5 +1,4 @@
 (function() {
-  const statusEl = document.getElementById('status');
   const collectBtn = document.getElementById('collectBtn');
   const toggleLogBtn = document.getElementById('toggleLogBtn');
   const logEl = document.getElementById('log');
@@ -8,15 +7,18 @@
   const refreshOptionsBtn = document.getElementById('refreshOptionsBtn');
 
   const apiEndpoint = 'https://facebook-ads-manager-data-collector.vercel.app/api/upload';
+  const defaultCollectText = '开始采集数据';
 
   let collectedData = [];
   let logEntries = [];
-  let statusState = { message: '等待采集...', type: 'idle' };
+  let statusState = { message: defaultCollectText, type: 'idle' };
 
   function updateStatus(message, type) {
     statusState = { message, type };
-    statusEl.textContent = message;
-    statusEl.className = 'status ' + type;
+    const buttonText = type === 'idle' ? defaultCollectText : message;
+    collectBtn.textContent = buttonText;
+    collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
+    collectBtn.classList.add('state-' + type);
     persistUIState();
   }
 
@@ -166,8 +168,7 @@
         const uiState = result.uiState;
         if (uiState.status) {
           statusState = uiState.status;
-          statusEl.textContent = statusState.message || '等待采集...';
-          statusEl.className = 'status ' + (statusState.type || 'idle');
+          updateStatus(statusState.message || defaultCollectText, statusState.type || 'idle');
         }
         if (Array.isArray(uiState.logs)) {
           logEntries = uiState.logs;

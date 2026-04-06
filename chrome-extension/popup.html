@@ -50,29 +50,6 @@
       color: #1877f2;
       margin-bottom: 0;
     }
-    .status {
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 12px;
-      font-size: 13px;
-      text-align: center;
-    }
-    .status.idle {
-      background: #2d2d44;
-      color: #aaa;
-    }
-    .status.collecting {
-      background: #1a4d1a;
-      color: #4caf50;
-    }
-    .status.success {
-      background: #1a4d4d;
-      color: #4dd0e1;
-    }
-    .status.error {
-      background: #4d1a1a;
-      color: #f44336;
-    }
     .btn {
       width: 100%;
       padding: 12px;
@@ -86,6 +63,15 @@
     .btn-primary {
       background: #1877f2;
       color: white;
+    }
+    .btn-primary.state-collecting {
+      background: #166fe5;
+    }
+    .btn-primary.state-success {
+      background: #1f9d65;
+    }
+    .btn-primary.state-error {
+      background: #d64545;
     }
     .btn-primary:hover {
       background: #166fe5;
@@ -181,8 +167,6 @@
   <div class="header">
     <h1>📊 广告报表同步助手</h1>
   </div>
-
-  <div class="status idle" id="status">等待采集...</div>
 
   <div class="input-group">
     <label>项目名称</label>
