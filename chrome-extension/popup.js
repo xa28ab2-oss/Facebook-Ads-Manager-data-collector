@@ -34,6 +34,7 @@
     collectBtn.classList.add('state-' + type);
     if (statusNoteEl && (type === 'success' || type === 'error')) {
       statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + (message || '');
+      statusNoteEl.title = '点击查看历史记录';
       statusNoteEl.className = 'status-note ' + type;
     }
     if (type === 'success' || type === 'error') {
@@ -205,6 +206,7 @@
         }
         if (statusNoteEl && typeof uiState.statusNote === 'string') {
           statusNoteEl.textContent = uiState.statusNote;
+          statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
           statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
         }
       }
@@ -513,6 +515,14 @@
   }
   if (toggleLogBtn && logEl) {
     toggleLogBtn.addEventListener('click', function() {
+      const isVisible = logEl.style.display !== 'none';
+      logEl.style.display = isVisible ? 'none' : 'block';
+      persistUIState();
+    });
+  }
+  if (statusNoteEl && logEl) {
+    statusNoteEl.addEventListener('click', function() {
+      if (!statusNoteEl.textContent) return;
       const isVisible = logEl.style.display !== 'none';
       logEl.style.display = isVisible ? 'none' : 'block';
       persistUIState();
