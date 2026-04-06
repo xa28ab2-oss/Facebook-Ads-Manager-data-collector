@@ -24,21 +24,29 @@
     return new Date().toLocaleString('zh-CN', { hour12: false });
   }
 
-  function updateStatus(message, type) {
+  function setStatusNote(message, type) {
+    if (!statusNoteEl || !message) return;
+    statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + message;
+    statusNoteEl.className = 'status-note ' + type;
+  }
+
+  function updateStatus(message, type, noteMessage) {
     statusState = { message, type };
     clearStatusResetTimer();
     const buttonText = type === 'idle' ? defaultCollectText : message;
     collectBtn.textContent = buttonText;
     collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
     collectBtn.classList.add('state-' + type);
-    if (statusNoteEl && (type === 'success' || type === 'error')) {
-      const shortMessage = type === 'success' ? '成功' : '失败';
-      statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + shortMessage;
-      statusNoteEl.className = 'status-note ' + type;
+    if (type === 'success' || type === 'error') {
+      setStatusNote(noteMessage || message, type);
     }
     if (type === 'success' || type === 'error') {
+      if (type === 'error') {
+        collectBtn.disabled = true;
+      }
       statusResetTimer = setTimeout(() => {
         updateStatus(defaultCollectText, 'idle');
+        collectBtn.disabled = false;
       }, 3000);
     }
     persistUIState();
@@ -100,7 +108,7 @@
 
   function validateSelections(projectName, buyerName) {
     if (!projectName || !buyerName) {
-      updateStatus('请选择项目和投手', 'error');
+      updateStatus('请选择项目和投手', 'error', '请先选择项目和投手');
       addLog('未选择项目或投手，已停止上传', 'error');
       return false;
     }
@@ -109,11 +117,18 @@
 
   function setSelectOptions(selectEl, options, placeholder, selectedValue) {
     const value = selectedValue || selectEl.value || '';
-    const items = Array.isArray(options) ? options.filter(Boolean) : [];
+    const blockedLabels = new Set(['请选择项目', '请选择项目名称', '请选择投手', '请选择投手名称']);
+    const items = Array.isArray(options)
+      ? options
+          .map((item) => (item == null ? '' : String(item).trim()))
+          .filter((item) => item && !blockedLabels.has(item))
+      : [];
     selectEl.innerHTML = '';
     const empty = document.createElement('option');
     empty.value = '';
     empty.textContent = placeholder;
+    empty.disabled = true;
+    empty.hidden = true;
     selectEl.appendChild(empty);
     for (const item of items) {
       const option = document.createElement('option');
@@ -282,13 +297,13 @@
 
       const startResp = await sendToBackground({ action: 'startCollection', tabId: tab.id });
       if (!startResp || !startResp.success) {
-        updateStatus('采集启动失败', 'error');
+        updateStatus('采集启动失败', 'error', '采集启动失败: ' + ((startResp && startResp.error) || 'unknown'));
         addLog('采集启动失败: ' + ((startResp && startResp.error) || 'unknown'), 'error');
         if (startResp && startResp.error === 'background timeout') {
           addLog('后台未响应，正在重新加载扩展，请重新打开弹窗再试', 'error');
           chrome.runtime.reload();
         }
-        collectBtn.disabled = false;
+        if (statusState.type !== 'error') collectBtn.disabled = false;
         return;
       }
 
@@ -307,7 +322,7 @@
       }
 
       const proceedAfterRefresh = function() {
-        addLog('等待 10 秒采集数据...');
+        addLog('等待 5 秒采集数据...');
         setTimeout(async function() {
           addLog('正在获取采集结果...');
 
@@ -348,7 +363,7 @@
           } catch (e) {}
 
           if (collectedData.length === 0) {
-            updateStatus('未检测到广告数据', 'error');
+            updateStatus('未检测到广告数据', 'error', '采集失败: 未检测到广告数据');
             addLog('警告: 未检测到广告数据', 'error');
             if (response && response.error) {
               addLog('采集错误: ' + response.error, 'error');
@@ -365,10 +380,10 @@
           });
           if (invalidRecord) {
             const range = extractDateRange(invalidRecord);
-            updateStatus('日期不符合要求，已停止上传', 'error');
+            updateStatus('日期不符合要求，已停止上传', 'error', `上传失败: 日期校验失败(${range.date_start || '-'} ~ ${range.date_stop || '-'})`);
             addLog(`日期校验失败: 需要 ${expectedDate}，实际 ${range.date_start || '-'} ~ ${range.date_stop || '-'}`, 'error');
             await sendToBackground({ action: 'stopCollection' });
-            collectBtn.disabled = false;
+            if (statusState.type !== 'error') collectBtn.disabled = false;
             return;
           }
 
@@ -421,10 +436,10 @@
               const errors = resultData && Array.isArray(resultData.errors) ? resultData.errors : null;
 
               if (uploaded === 0 && failed && failed > 0) {
-                updateStatus('上传完成(有错误)', 'error');
+                updateStatus('上传完成(有错误)', 'error', '上传失败: 成功 0 条，失败 ' + failed + ' 条');
                 addLog('上传结果: 成功 0 条，失败 ' + failed + ' 条', 'error');
               } else {
-                updateStatus('上传成功!', 'success');
+                updateStatus('上传成功!', 'success', uploaded != null ? '上传成功: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' : '上传成功');
                 if (uploaded != null && failed != null) {
                   addLog('上传结果: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条', 'info');
                 } else {
@@ -437,12 +452,12 @@
               }
             } else {
               const errorText = await uploadResponse.text();
-              updateStatus('上传失败', 'error');
+              updateStatus('上传失败', 'error', '上传失败: HTTP ' + uploadResponse.status);
               addLog('上传失败: ' + uploadResponse.status, 'error');
               if (errorText) addLog('服务端返回: ' + errorText, 'error');
             }
           } catch (uploadError) {
-            updateStatus('上传失败', 'error');
+            updateStatus('上传失败', 'error', '上传失败: ' + ((uploadError && uploadError.message) ? uploadError.message : String(uploadError)));
             const name = uploadError && uploadError.name ? uploadError.name : 'Error';
             const message = uploadError && uploadError.message ? uploadError.message : String(uploadError);
             addLog('上传失败: ' + name + ': ' + message, 'error');
@@ -450,8 +465,8 @@
           }
 
           await sendToBackground({ action: 'stopCollection' });
-          collectBtn.disabled = false;
-        }, 10000);
+          if (statusState.type !== 'error') collectBtn.disabled = false;
+        }, 5000);
       };
 
       findAndClickRefreshButton(tab.id, async function(success, error) {
@@ -488,10 +503,10 @@
       });
 
     } catch (error) {
-      updateStatus('发生错误', 'error');
+      updateStatus('发生错误', 'error', '采集失败: ' + error.message);
       addLog('错误: ' + error.message, 'error');
       await sendToBackground({ action: 'stopCollection' });
-      collectBtn.disabled = false;
+      if (statusState.type !== 'error') collectBtn.disabled = false;
     }
   });
 
