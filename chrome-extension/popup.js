@@ -490,5 +490,5 @@
   }
 
   loadSettings();
-  addLog('插件已就绪，请在 Facebook Ads Manager 页面使用', 'info');
+  addLog('插件已就绪，请在广告平台报表页面使用', 'info');
 })();
