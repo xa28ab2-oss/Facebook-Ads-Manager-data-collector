@@ -58,6 +58,10 @@
     return formatDate(yesterday);
   }
 
+  function getTodayDateString() {
+    return formatDate(new Date());
+  }
+
   function extractDateRange(record) {
     const raw = record && record.raw_fields ? record.raw_fields : {};
     return {
@@ -112,6 +116,13 @@
       setSelectOptions(buyerNameInput, buyers, '请选择投手', selectedBuyer);
       if (selectedProject && !projects.includes(selectedProject)) projectNameInput.value = '';
       if (selectedBuyer && !buyers.includes(selectedBuyer)) buyerNameInput.value = '';
+      chrome.storage.local.set({
+        optionsCache: {
+          date: getTodayDateString(),
+          projects,
+          buyers
+        }
+      });
       saveSettings();
     } catch (e) {
       const message = e && e.message ? e.message : String(e);
@@ -133,12 +144,24 @@
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['projectName', 'buyerName', 'uiState'], function(result) {
+    chrome.storage.local.get(['projectName', 'buyerName', 'uiState', 'optionsCache'], function(result) {
       const savedProject = result.projectName || '';
       const savedBuyer = result.buyerName || '';
       if (savedProject) projectNameInput.value = savedProject;
       if (savedBuyer) buyerNameInput.value = savedBuyer;
-      loadOptions(savedProject, savedBuyer);
+      const optionsCache = result.optionsCache;
+      const cacheProjects = optionsCache && Array.isArray(optionsCache.projects) ? optionsCache.projects : null;
+      const cacheBuyers = optionsCache && Array.isArray(optionsCache.buyers) ? optionsCache.buyers : null;
+      const isTodayCache = optionsCache && optionsCache.date === getTodayDateString();
+      if (isTodayCache && cacheProjects && cacheBuyers) {
+        setSelectOptions(projectNameInput, cacheProjects, '请选择项目', savedProject);
+        setSelectOptions(buyerNameInput, cacheBuyers, '请选择投手', savedBuyer);
+        if (savedProject && !cacheProjects.includes(savedProject)) projectNameInput.value = '';
+        if (savedBuyer && !cacheBuyers.includes(savedBuyer)) buyerNameInput.value = '';
+        saveSettings();
+      } else {
+        loadOptions(savedProject, savedBuyer);
+      }
       if (result.uiState) {
         const uiState = result.uiState;
         if (uiState.status) {
