@@ -1,7 +1,6 @@
 (function() {
   const collectBtn = document.getElementById('collectBtn');
   const statusNoteEl = document.getElementById('statusNote');
-  const toggleLogBtn = document.getElementById('toggleLogBtn');
   const logEl = document.getElementById('log');
   const projectNameInput = document.getElementById('projectName');
   const buyerNameInput = document.getElementById('buyerName');
@@ -33,8 +32,8 @@
     collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
     collectBtn.classList.add('state-' + type);
     if (statusNoteEl && (type === 'success' || type === 'error')) {
-      statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + (message || '');
-      statusNoteEl.title = '点击查看历史记录';
+      const shortMessage = type === 'success' ? '成功' : '失败';
+      statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + shortMessage;
       statusNoteEl.className = 'status-note ' + type;
     }
     if (type === 'success' || type === 'error') {
@@ -163,7 +162,7 @@
       uiState: {
         status: statusState,
         logs: logEntries,
-        logVisible: logEl.style.display !== 'none',
+        logVisible: false,
         statusNote: statusNoteEl ? statusNoteEl.textContent : '',
         statusNoteType: statusNoteEl && statusNoteEl.classList.contains('error') ? 'error' :
           statusNoteEl && statusNoteEl.classList.contains('success') ? 'success' : ''
@@ -201,12 +200,9 @@
           logEl.innerHTML = '';
           for (const item of logEntries) renderLog(item);
         }
-        if (typeof uiState.logVisible === 'boolean') {
-          logEl.style.display = uiState.logVisible ? 'block' : 'none';
-        }
+        logEl.style.display = 'none';
         if (statusNoteEl && typeof uiState.statusNote === 'string') {
           statusNoteEl.textContent = uiState.statusNote;
-          statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
           statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
         }
       }
@@ -513,21 +509,7 @@
       loadOptions(selectedProject, selectedBuyer);
     });
   }
-  if (toggleLogBtn && logEl) {
-    toggleLogBtn.addEventListener('click', function() {
-      const isVisible = logEl.style.display !== 'none';
-      logEl.style.display = isVisible ? 'none' : 'block';
-      persistUIState();
-    });
-  }
-  if (statusNoteEl && logEl) {
-    statusNoteEl.addEventListener('click', function() {
-      if (!statusNoteEl.textContent) return;
-      const isVisible = logEl.style.display !== 'none';
-      logEl.style.display = isVisible ? 'none' : 'block';
-      persistUIState();
-    });
-  }
+  logEl.style.display = 'none';
 
   loadSettings();
   addLog('插件已就绪，请在广告平台报表页面使用', 'info');
