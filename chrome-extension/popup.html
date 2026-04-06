@@ -156,6 +156,19 @@
     .action-row .btn-primary {
       flex: 1;
     }
+    .status-note {
+      margin-top: 8px;
+      min-height: 16px;
+      font-size: 12px;
+      text-align: center;
+      color: #888;
+    }
+    .status-note.success {
+      color: #4caf50;
+    }
+    .status-note.error {
+      color: #f44336;
+    }
   </style>
 </head>
 <body>
@@ -181,6 +194,7 @@
   <div class="action-row">
     <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
   </div>
+  <div class="status-note" id="statusNote"></div>
 
   <div class="log" id="log" style="display: none;"></div>
 

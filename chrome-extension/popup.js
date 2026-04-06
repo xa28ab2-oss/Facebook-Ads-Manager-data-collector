@@ -1,5 +1,6 @@
 (function() {
   const collectBtn = document.getElementById('collectBtn');
+  const statusNoteEl = document.getElementById('statusNote');
   const toggleLogBtn = document.getElementById('toggleLogBtn');
   const logEl = document.getElementById('log');
   const projectNameInput = document.getElementById('projectName');
@@ -12,13 +13,30 @@
   let collectedData = [];
   let logEntries = [];
   let statusState = { message: defaultCollectText, type: 'idle' };
+  let statusResetTimer = null;
+
+  function clearStatusResetTimer() {
+    if (!statusResetTimer) return;
+    clearTimeout(statusResetTimer);
+    statusResetTimer = null;
+  }
 
   function updateStatus(message, type) {
     statusState = { message, type };
+    clearStatusResetTimer();
     const buttonText = type === 'idle' ? defaultCollectText : message;
     collectBtn.textContent = buttonText;
     collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
     collectBtn.classList.add('state-' + type);
+    if (statusNoteEl && (type === 'success' || type === 'error')) {
+      statusNoteEl.textContent = message || '';
+      statusNoteEl.className = 'status-note ' + type;
+    }
+    if (type === 'error') {
+      statusResetTimer = setTimeout(() => {
+        updateStatus(defaultCollectText, 'idle');
+      }, 5000);
+    }
     persistUIState();
   }
 
@@ -140,7 +158,10 @@
       uiState: {
         status: statusState,
         logs: logEntries,
-        logVisible: logEl.style.display !== 'none'
+        logVisible: logEl.style.display !== 'none',
+        statusNote: statusNoteEl ? statusNoteEl.textContent : '',
+        statusNoteType: statusNoteEl && statusNoteEl.classList.contains('error') ? 'error' :
+          statusNoteEl && statusNoteEl.classList.contains('success') ? 'success' : ''
       }
     });
   }
@@ -177,6 +198,10 @@
         }
         if (typeof uiState.logVisible === 'boolean') {
           logEl.style.display = uiState.logVisible ? 'block' : 'none';
+        }
+        if (statusNoteEl && typeof uiState.statusNote === 'string') {
+          statusNoteEl.textContent = uiState.statusNote;
+          statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
         }
       }
     });
