@@ -21,6 +21,10 @@
     statusResetTimer = null;
   }
 
+  function getTimeLabel() {
+    return new Date().toLocaleTimeString();
+  }
+
   function updateStatus(message, type) {
     statusState = { message, type };
     clearStatusResetTimer();
@@ -29,7 +33,7 @@
     collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
     collectBtn.classList.add('state-' + type);
     if (statusNoteEl && (type === 'success' || type === 'error')) {
-      statusNoteEl.textContent = message || '';
+      statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + (message || '');
       statusNoteEl.className = 'status-note ' + type;
     }
     if (type === 'error') {
