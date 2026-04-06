@@ -22,7 +22,7 @@
   }
 
   function getTimeLabel() {
-    return new Date().toLocaleTimeString();
+    return new Date().toLocaleString('zh-CN', { hour12: false });
   }
 
   function updateStatus(message, type) {
