@@ -11,6 +11,7 @@
 
   let collectedData = [];
   let logEntries = [];
+  let statusHistoryEntries = [];
   let statusState = { message: defaultCollectText, type: 'idle' };
   let statusResetTimer = null;
 
@@ -24,10 +25,33 @@
     return new Date().toLocaleString('zh-CN', { hour12: false });
   }
 
-  function setStatusNote(message, type) {
+  function renderStatusHistory() {
+    if (!logEl) return;
+    logEl.innerHTML = '';
+    for (const entry of statusHistoryEntries) {
+      const item = document.createElement('div');
+      item.className = 'log-entry ' + entry.type;
+      item.textContent = '[' + entry.time + '] ' + entry.message;
+      logEl.appendChild(item);
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatusNote(message, type, recordHistory = true) {
     if (!statusNoteEl || !message) return;
-    statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + message;
+    const time = getTimeLabel();
+    statusNoteEl.textContent = '[' + time + '] ' + message;
+    statusNoteEl.title = '点击查看历史记录';
     statusNoteEl.className = 'status-note ' + type;
+    if (recordHistory) {
+      statusHistoryEntries.push({ time, message, type });
+      if (statusHistoryEntries.length > 100) {
+        statusHistoryEntries = statusHistoryEntries.slice(statusHistoryEntries.length - 100);
+      }
+      if (logEl.style.display !== 'none') {
+        renderStatusHistory();
+      }
+    }
   }
 
   function updateStatus(message, type, noteMessage) {
@@ -38,7 +62,7 @@
     collectBtn.classList.remove('state-idle', 'state-collecting', 'state-success', 'state-error');
     collectBtn.classList.add('state-' + type);
     if (type === 'success' || type === 'error') {
-      setStatusNote(noteMessage || message, type);
+      setStatusNote(noteMessage || message, type, true);
     }
     if (type === 'success' || type === 'error') {
       if (type === 'error') {
@@ -52,14 +76,6 @@
     persistUIState();
   }
 
-  function renderLog(entry) {
-    const item = document.createElement('div');
-    item.className = 'log-entry ' + entry.type;
-    item.textContent = '[' + entry.time + '] ' + entry.message;
-    logEl.appendChild(item);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
   function addLog(message, type = 'info') {
     const entry = {
       time: new Date().toLocaleTimeString(),
@@ -69,10 +85,6 @@
     logEntries.push(entry);
     if (logEntries.length > 200) {
       logEntries = logEntries.slice(logEntries.length - 200);
-      logEl.innerHTML = '';
-      for (const item of logEntries) renderLog(item);
-    } else {
-      renderLog(entry);
     }
     persistUIState();
   }
@@ -140,11 +152,14 @@
   }
 
   async function loadOptions(selectedProject, selectedBuyer) {
+    let loadFailed = false;
     try {
       updateStatus('插件加载中...', 'collecting');
       collectBtn.disabled = true;
       const response = await fetch(getOptionsEndpoint(), { method: 'GET' });
       if (!response.ok) {
+        loadFailed = true;
+        updateStatus('配置表读取失败', 'error', '配置表读取失败: HTTP ' + response.status);
         addLog('配置表读取失败: ' + response.status, 'error');
         return;
       }
@@ -164,11 +179,13 @@
       });
       saveSettings();
     } catch (e) {
+      loadFailed = true;
       const message = e && e.message ? e.message : String(e);
+      updateStatus('配置表读取失败', 'error', '配置表读取失败: ' + message);
       addLog('配置表读取失败: ' + message, 'error');
     } finally {
-      updateStatus('等待采集...', 'idle');
-      collectBtn.disabled = false;
+      if (!loadFailed) updateStatus('等待采集...', 'idle');
+      if (statusState.type !== 'error') collectBtn.disabled = false;
     }
   }
 
@@ -177,7 +194,8 @@
       uiState: {
         status: statusState,
         logs: logEntries,
-        logVisible: false,
+        statusHistory: statusHistoryEntries,
+        logVisible: logEl.style.display !== 'none',
         statusNote: statusNoteEl ? statusNoteEl.textContent : '',
         statusNoteType: statusNoteEl && statusNoteEl.classList.contains('error') ? 'error' :
           statusNoteEl && statusNoteEl.classList.contains('success') ? 'success' : ''
@@ -212,12 +230,19 @@
         }
         if (Array.isArray(uiState.logs)) {
           logEntries = uiState.logs;
-          logEl.innerHTML = '';
-          for (const item of logEntries) renderLog(item);
         }
-        logEl.style.display = 'none';
+        if (Array.isArray(uiState.statusHistory)) {
+          statusHistoryEntries = uiState.statusHistory;
+        }
+        renderStatusHistory();
+        if (typeof uiState.logVisible === 'boolean') {
+          logEl.style.display = uiState.logVisible ? 'block' : 'none';
+        } else {
+          logEl.style.display = 'none';
+        }
         if (statusNoteEl && typeof uiState.statusNote === 'string') {
           statusNoteEl.textContent = uiState.statusNote;
+          statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
           statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
         }
       }
@@ -380,7 +405,7 @@
           });
           if (invalidRecord) {
             const range = extractDateRange(invalidRecord);
-            updateStatus('日期不符合要求，已停止上传', 'error', `上传失败: 日期校验失败(${range.date_start || '-'} ~ ${range.date_stop || '-'})`);
+            updateStatus('日期不符合要求，已停止上传', 'error', '上传失败: 日期选择错误');
             addLog(`日期校验失败: 需要 ${expectedDate}，实际 ${range.date_start || '-'} ~ ${range.date_stop || '-'}`, 'error');
             await sendToBackground({ action: 'stopCollection' });
             if (statusState.type !== 'error') collectBtn.disabled = false;
@@ -435,11 +460,12 @@
               const failed = resultData && typeof resultData.failed === 'number' ? resultData.failed : null;
               const errors = resultData && Array.isArray(resultData.errors) ? resultData.errors : null;
 
-              if (uploaded === 0 && failed && failed > 0) {
-                updateStatus('上传完成(有错误)', 'error', '上传失败: 成功 0 条，失败 ' + failed + ' 条');
-                addLog('上传结果: 成功 0 条，失败 ' + failed + ' 条', 'error');
+              if (failed && failed > 0) {
+                const uploadedCount = uploaded != null ? uploaded : 0;
+                updateStatus('上传完成(有错误)', 'error', '上传失败: 成功 ' + uploadedCount + ' 条，失败 ' + failed + ' 条');
+                addLog('上传结果: 成功 ' + uploadedCount + ' 条，失败 ' + failed + ' 条', 'error');
               } else {
-                updateStatus('上传成功!', 'success', uploaded != null ? '上传成功: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' : '上传成功');
+                updateStatus('上传成功!', 'success', '上传成功');
                 if (uploaded != null && failed != null) {
                   addLog('上传结果: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条', 'info');
                 } else {
@@ -522,6 +548,14 @@
       const selectedBuyer = buyerNameInput.value || '';
       addLog('手动刷新下拉选项...');
       loadOptions(selectedProject, selectedBuyer);
+    });
+  }
+  if (statusNoteEl && logEl) {
+    statusNoteEl.addEventListener('click', function() {
+      if (!statusNoteEl.textContent) return;
+      const isVisible = logEl.style.display !== 'none';
+      logEl.style.display = isVisible ? 'none' : 'block';
+      persistUIState();
     });
   }
   logEl.style.display = 'none';
