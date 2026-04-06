@@ -36,10 +36,10 @@
       statusNoteEl.textContent = '[' + getTimeLabel() + '] ' + (message || '');
       statusNoteEl.className = 'status-note ' + type;
     }
-    if (type === 'error') {
+    if (type === 'success' || type === 'error') {
       statusResetTimer = setTimeout(() => {
         updateStatus(defaultCollectText, 'idle');
-      }, 5000);
+      }, 3000);
     }
     persistUIState();
   }
