@@ -24,7 +24,7 @@
     .toolbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       margin-bottom: 8px;
     }
     .icon-btn {
@@ -134,6 +134,21 @@
       color: #888;
       margin-bottom: 4px;
     }
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .field-label-row label {
+      margin-bottom: 0;
+    }
+    .field-label-row .icon-btn {
+      width: 24px;
+      height: 24px;
+      font-size: 13px;
+      border-radius: 6px;
+    }
     .input-group input,
     .input-group select {
       width: 100%;
@@ -173,7 +188,6 @@
 </head>
 <body>
   <div class="toolbar">
-    <button class="icon-btn" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
     <button class="icon-btn" id="toggleLogBtn" title="显示日志">📝</button>
   </div>
 
@@ -182,7 +196,10 @@
   </div>
 
   <div class="input-group">
-    <label>项目名称</label>
+    <div class="field-label-row">
+      <label>项目名称</label>
+      <button class="icon-btn" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
+    </div>
     <select id="projectName"></select>
   </div>
 
