@@ -5,7 +5,7 @@ const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_TABLE_ID = process.env.LARK_TABLE_ID || '';
 const API_TOKEN = process.env.API_TOKEN || '';
-const ENFORCE_DATE_VALIDATION = false;
+const ENFORCE_DATE_VALIDATION = true;
 
 function normalizeFieldName(name) {
   return String(name || '')

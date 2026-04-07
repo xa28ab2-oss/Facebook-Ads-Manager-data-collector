@@ -29,19 +29,9 @@
     }
     .header-top {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       margin-bottom: 4px;
-    }
-    .mode-badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      color: #ffd89c;
-      border: 1px solid #6b5331;
-      background: #2d2418;
     }
     .header-title {
       text-align: center;
@@ -243,7 +233,6 @@
 <body>
   <div class="header">
     <div class="header-top">
-      <span class="mode-badge">调试模式: 日期校验已关闭</span>
       <button class="icon-btn" id="toggleLogBtn" title="显示日志">📝</button>
     </div>
     <div class="header-title">
