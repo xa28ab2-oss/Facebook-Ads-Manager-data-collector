@@ -543,6 +543,12 @@ function extractFacebookInsightsData(data) {
       ) {
         rawFields['actions:omni_complete_registration'] = completeRegistrations;
       }
+      if (
+        !Object.prototype.hasOwnProperty.call(rawFields, 'omni_complete_registration') &&
+        Object.prototype.hasOwnProperty.call(rawFields, 'actions:omni_complete_registration')
+      ) {
+        rawFields.omni_complete_registration = rawFields['actions:omni_complete_registration'];
+      }
       if (resultIndicator) {
         rawFields.result_indicator = resultIndicator;
       }

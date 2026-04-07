@@ -177,6 +177,7 @@ function buildFieldMapping(fieldsItems) {
     results: pickField(fieldsIndex, ['results', '成效', '结果']),
     cost_per_result: pickField(fieldsIndex, ['cost_per_result', '单次成效费用', '单次结果费用', '每结果费用']),
     complete_registrations: pickField(fieldsIndex, ['complete_registrations', 'complete_registration', '完成注册次数', '注册完成次数']),
+    omni_complete_registration: pickField(fieldsIndex, ['omni_complete_registration', '完成注册次数']),
     actions_omni_complete_registration: pickField(fieldsIndex, ['actions:omni_complete_registration', 'omni_complete_registration', '完成注册次数']),
     upload_mode: pickField(fieldsIndex, ['upload_mode', 'uploadmode', '上传模式', '模式']),
     operator: pickField(fieldsIndex, ['operator', '操作人', '操作者', '采集人']),
@@ -203,6 +204,12 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.results, record.results, 'number');
   setBitableFieldValue(fields, mapping.cost_per_result, record.cost_per_result, 'number');
   setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
+  setBitableFieldValue(
+    fields,
+    mapping.omni_complete_registration,
+    record.omni_complete_registration || record['actions:omni_complete_registration'],
+    'number'
+  );
   setBitableFieldValue(
     fields,
     mapping.actions_omni_complete_registration,
