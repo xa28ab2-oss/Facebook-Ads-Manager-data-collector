@@ -5,6 +5,7 @@
   "description": "采集多平台广告报表并同步到多维表格",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
     "debugger",
     "scripting"

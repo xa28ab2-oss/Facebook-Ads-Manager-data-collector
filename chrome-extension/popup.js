@@ -1,9 +1,13 @@
 (function() {
   const collectBtn = document.getElementById('collectBtn');
   const statusNoteEl = document.getElementById('statusNote');
+  const toggleLogBtn = document.getElementById('toggleLogBtn');
   const logEl = document.getElementById('log');
+  const logListEl = document.getElementById('logList');
+  const clearHistoryBtn = document.getElementById('clearHistoryBtn');
   const projectNameInput = document.getElementById('projectName');
   const buyerNameInput = document.getElementById('buyerName');
+  const uploadModeInput = document.getElementById('uploadMode');
   const refreshOptionsBtn = document.getElementById('refreshOptionsBtn');
 
   const apiEndpoint = 'https://facebook-ads-manager-data-collector.vercel.app/api/upload';
@@ -12,6 +16,8 @@
   let collectedData = [];
   let logEntries = [];
   let statusHistoryEntries = [];
+  let logViewMode = 'status';
+  let lastConsumedUploadResultAt = 0;
   let statusState = { message: defaultCollectText, type: 'idle' };
   let statusResetTimer = null;
 
@@ -26,15 +32,28 @@
   }
 
   function renderStatusHistory() {
-    if (!logEl) return;
-    logEl.innerHTML = '';
-    for (const entry of statusHistoryEntries) {
+    if (!logListEl) return;
+    logListEl.innerHTML = '';
+    for (let i = statusHistoryEntries.length - 1; i >= 0; i--) {
+      const entry = statusHistoryEntries[i];
       const item = document.createElement('div');
       item.className = 'log-entry ' + entry.type;
       item.textContent = '[' + entry.time + '] ' + entry.message;
-      logEl.appendChild(item);
+      logListEl.appendChild(item);
     }
-    logEl.scrollTop = logEl.scrollHeight;
+    logListEl.scrollTop = 0;
+  }
+
+  function renderDetailLogs() {
+    if (!logListEl) return;
+    logListEl.innerHTML = '';
+    for (const entry of logEntries) {
+      const item = document.createElement('div');
+      item.className = 'log-entry ' + entry.type;
+      item.textContent = '[' + entry.time + '] ' + entry.message;
+      logListEl.appendChild(item);
+    }
+    logListEl.scrollTop = logListEl.scrollHeight;
   }
 
   function setStatusNote(message, type, recordHistory = true) {
@@ -54,7 +73,7 @@
     }
   }
 
-  function updateStatus(message, type, noteMessage) {
+  function updateStatus(message, type, noteMessage, shouldPersist = true) {
     statusState = { message, type };
     clearStatusResetTimer();
     const buttonText = type === 'idle' ? defaultCollectText : message;
@@ -65,18 +84,18 @@
       setStatusNote(noteMessage || message, type, true);
     }
     if (type === 'success' || type === 'error') {
-      if (type === 'error') {
-        collectBtn.disabled = true;
-      }
+      collectBtn.disabled = true;
       statusResetTimer = setTimeout(() => {
         updateStatus(defaultCollectText, 'idle');
         collectBtn.disabled = false;
       }, 3000);
     }
-    persistUIState();
+    if (shouldPersist) {
+      persistUIState();
+    }
   }
 
-  function addLog(message, type = 'info') {
+  function addLog(message, type = 'info', shouldPersist = true) {
     const entry = {
       time: new Date().toLocaleTimeString(),
       message,
@@ -86,7 +105,12 @@
     if (logEntries.length > 200) {
       logEntries = logEntries.slice(logEntries.length - 200);
     }
-    persistUIState();
+    if (logEl.style.display !== 'none' && logViewMode === 'detail') {
+      renderDetailLogs();
+    }
+    if (shouldPersist) {
+      persistUIState();
+    }
   }
 
   function formatDate(value) {
@@ -185,7 +209,7 @@
       addLog('配置表读取失败: ' + message, 'error');
     } finally {
       if (!loadFailed) updateStatus('等待采集...', 'idle');
-      if (statusState.type !== 'error') collectBtn.disabled = false;
+      if (statusState.type !== 'success' && statusState.type !== 'error') collectBtn.disabled = false;
     }
   }
 
@@ -195,6 +219,8 @@
         status: statusState,
         logs: logEntries,
         statusHistory: statusHistoryEntries,
+        logView: logViewMode,
+        lastConsumedUploadResultAt,
         logVisible: logEl.style.display !== 'none',
         statusNote: statusNoteEl ? statusNoteEl.textContent : '',
         statusNoteType: statusNoteEl && statusNoteEl.classList.contains('error') ? 'error' :
@@ -204,11 +230,45 @@
   }
 
   function loadSettings() {
-    chrome.storage.local.get(['projectName', 'buyerName', 'uiState', 'optionsCache'], function(result) {
+    chrome.storage.local.get(['projectName', 'buyerName', 'uploadMode', 'uiState', 'optionsCache'], function(result) {
       const savedProject = result.projectName || '';
       const savedBuyer = result.buyerName || '';
+      const savedUploadMode = result.uploadMode || '日报';
       if (savedProject) projectNameInput.value = savedProject;
       if (savedBuyer) buyerNameInput.value = savedBuyer;
+      if (uploadModeInput) uploadModeInput.value = savedUploadMode;
+      if (result.uiState) {
+        const uiState = result.uiState;
+        if (Array.isArray(uiState.logs)) {
+          logEntries = uiState.logs;
+        }
+        if (Array.isArray(uiState.statusHistory)) {
+          statusHistoryEntries = uiState.statusHistory;
+        }
+        if (typeof uiState.logView === 'string') {
+          logViewMode = uiState.logView === 'detail' ? 'detail' : 'status';
+        }
+        if (typeof uiState.lastConsumedUploadResultAt === 'number') {
+          lastConsumedUploadResultAt = uiState.lastConsumedUploadResultAt;
+        }
+        if (statusNoteEl && typeof uiState.statusNote === 'string') {
+          statusNoteEl.textContent = uiState.statusNote;
+          statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
+          statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
+        }
+        if (logViewMode === 'detail') {
+          renderDetailLogs();
+        } else {
+          renderStatusHistory();
+        }
+        if (typeof uiState.logVisible === 'boolean') {
+          logEl.style.display = uiState.logVisible ? 'block' : 'none';
+        } else {
+          logEl.style.display = 'none';
+        }
+      }
+      updateStatus(defaultCollectText, 'idle', null, false);
+      collectBtn.disabled = false;
       const optionsCache = result.optionsCache;
       const cacheProjects = optionsCache && Array.isArray(optionsCache.projects) ? optionsCache.projects : null;
       const cacheBuyers = optionsCache && Array.isArray(optionsCache.buyers) ? optionsCache.buyers : null;
@@ -222,37 +282,14 @@
       } else {
         loadOptions(savedProject, savedBuyer);
       }
-      if (result.uiState) {
-        const uiState = result.uiState;
-        if (uiState.status) {
-          statusState = uiState.status;
-          updateStatus(statusState.message || defaultCollectText, statusState.type || 'idle');
-        }
-        if (Array.isArray(uiState.logs)) {
-          logEntries = uiState.logs;
-        }
-        if (Array.isArray(uiState.statusHistory)) {
-          statusHistoryEntries = uiState.statusHistory;
-        }
-        renderStatusHistory();
-        if (typeof uiState.logVisible === 'boolean') {
-          logEl.style.display = uiState.logVisible ? 'block' : 'none';
-        } else {
-          logEl.style.display = 'none';
-        }
-        if (statusNoteEl && typeof uiState.statusNote === 'string') {
-          statusNoteEl.textContent = uiState.statusNote;
-          statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
-          statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
-        }
-      }
     });
   }
 
   function saveSettings() {
     chrome.storage.local.set({
       projectName: projectNameInput.value,
-      buyerName: buyerNameInput.value
+      buyerName: buyerNameInput.value,
+      uploadMode: uploadModeInput ? uploadModeInput.value : '日报'
     });
   }
 
@@ -299,9 +336,54 @@
     });
   }
 
+  function applyUploadTaskResult(result) {
+    if (!result || !result.type) return;
+    if (result.at && typeof result.at === 'number') {
+      lastConsumedUploadResultAt = result.at;
+    }
+    if (result.type === 'success') {
+      updateStatus('上传成功!', 'success', result.message || '上传成功');
+      return;
+    }
+    updateStatus('上传失败', 'error', result.message || '上传失败');
+  }
+
+  async function pollUploadTaskResult(maxRound = 30) {
+    for (let i = 0; i < maxRound; i++) {
+      const stateResp = await sendToBackground({ action: 'getUploadTaskState' });
+      if (stateResp && stateResp.success) {
+        if (stateResp.result && !stateResp.running) {
+          applyUploadTaskResult(stateResp.result);
+          return;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+  }
+
+  async function syncUploadTaskStateFromBackground() {
+    const stateResp = await sendToBackground({ action: 'getUploadTaskState' });
+    if (!stateResp || !stateResp.success) return;
+    if (stateResp.running) {
+      updateStatus('正在后台上传数据...', 'collecting', null, false);
+      collectBtn.disabled = true;
+      await pollUploadTaskResult(120);
+      return;
+    }
+    if (stateResp.result && stateResp.result.at && stateResp.result.at !== lastConsumedUploadResultAt) {
+      setStatusNote(stateResp.result.message || (stateResp.result.type === 'success' ? '上传成功' : '上传失败'), stateResp.result.type, true);
+      lastConsumedUploadResultAt = stateResp.result.at;
+      persistUIState();
+      sendToBackground({ action: 'clearUploadTaskResult' });
+    }
+    updateStatus(defaultCollectText, 'idle', null, false);
+    collectBtn.disabled = false;
+  }
+
   collectBtn.addEventListener('click', async function() {
     const projectName = projectNameInput.value.trim();
     const buyerName = buyerNameInput.value.trim();
+    const uploadMode = uploadModeInput ? String(uploadModeInput.value || '日报').trim() : '日报';
     if (!validateSelections(projectName, buyerName)) return;
 
     saveSettings();
@@ -328,7 +410,7 @@
           addLog('后台未响应，正在重新加载扩展，请重新打开弹窗再试', 'error');
           chrome.runtime.reload();
         }
-        if (statusState.type !== 'error') collectBtn.disabled = false;
+        if (statusState.type !== 'success' && statusState.type !== 'error') collectBtn.disabled = false;
         return;
       }
 
@@ -346,153 +428,21 @@
         addLog('采集尚未完全就绪，继续尝试刷新', 'error');
       }
 
-      const proceedAfterRefresh = function() {
+      const proceedAfterRefresh = async function() {
         addLog('等待 5 秒采集数据...');
-        setTimeout(async function() {
-          addLog('正在获取采集结果...');
-
-          const response = await sendToBackground({ action: 'getData' });
-          collectedData = (response && response.data) || [];
-          addLog('采集到 ' + collectedData.length + ' 条记录');
-
-          try {
-            if (response && response.meta) {
-              if (response.meta.atomic_columns) {
-                addLog('采集列(atomic_columns): ' + JSON.stringify(response.meta.atomic_columns));
-              }
-              if (response.meta.dimensions) {
-                addLog('采集列(dimensions): ' + JSON.stringify(response.meta.dimensions));
-              }
-              if (typeof response.meta.name_cache_size === 'number') {
-                addLog('名称缓存命中: ' + response.meta.name_cache_size);
-              }
-              if (response.meta.name_sample) {
-                addLog('名称缓存样例: ' + JSON.stringify(response.meta.name_sample));
-              }
-              if (typeof response.meta.capture_count === 'number') {
-                addLog('响应捕获数: ' + response.meta.capture_count);
-              }
-              if (typeof response.meta.parsed_count === 'number') {
-                addLog('解析成功数: ' + response.meta.parsed_count);
-              }
-              if (typeof response.meta.dataset_row_count === 'number') {
-                addLog('返回行数: ' + response.meta.dataset_row_count);
-              }
-              if (typeof response.meta.record_candidate_count === 'number') {
-                addLog('候选记录数: ' + response.meta.record_candidate_count);
-              }
-              if (typeof response.meta.record_kept_count === 'number') {
-                addLog('保留记录数: ' + response.meta.record_kept_count);
-              }
-            }
-          } catch (e) {}
-
-          if (collectedData.length === 0) {
-            updateStatus('未检测到广告数据', 'error', '采集失败: 未检测到广告数据');
-            addLog('警告: 未检测到广告数据', 'error');
-            if (response && response.error) {
-              addLog('采集错误: ' + response.error, 'error');
-            }
-            await sendToBackground({ action: 'stopCollection' });
-            collectBtn.disabled = false;
-            return;
-          }
-
-          const expectedDate = getYesterdayDateString();
-          const invalidRecord = collectedData.find((record) => {
-            const range = extractDateRange(record);
-            return range.date_start !== expectedDate || range.date_stop !== expectedDate;
-          });
-          if (invalidRecord) {
-            const range = extractDateRange(invalidRecord);
-            updateStatus('日期不符合要求，已停止上传', 'error', '上传失败: 日期选择错误');
-            addLog(`日期校验失败: 需要 ${expectedDate}，实际 ${range.date_start || '-'} ~ ${range.date_stop || '-'}`, 'error');
-            await sendToBackground({ action: 'stopCollection' });
-            if (statusState.type !== 'error') collectBtn.disabled = false;
-            return;
-          }
-
-          try {
-            const sample = collectedData.slice(0, 3);
-            addLog('采集数据(前3条): ' + JSON.stringify(sample));
-          } catch (e) {}
-
-          updateStatus('正在上传数据...', 'collecting');
-
-          const collectedAt = Date.now();
-          const collectedAtMinute = Math.floor(collectedAt / 60000) * 60000;
-          const payload = {
-            operator: 'unknown',
-            project_name: projectName || '',
-            buyer_name: buyerName || '',
-            timestamp: collectedAtMinute,
-            data: collectedData
-          };
-
-          try {
-            addLog('上传目标: ' + apiEndpoint);
-
-            try {
-              const preflight = await fetch(apiEndpoint, {
-                method: 'OPTIONS',
-              headers: {
-                'Content-Type': 'application/json'
-              }
-              });
-              addLog('预检(OPTIONS)状态: ' + preflight.status);
-            } catch (preflightError) {
-              const name = preflightError && preflightError.name ? preflightError.name : 'Error';
-              const message = preflightError && preflightError.message ? preflightError.message : String(preflightError);
-              addLog('预检(OPTIONS)失败: ' + name + ': ' + message, 'error');
-            }
-
-            const uploadResponse = await fetch(apiEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(payload)
-            });
-
-            if (uploadResponse.ok) {
-              const resultData = await uploadResponse.json();
-              const uploaded = resultData && typeof resultData.uploaded === 'number' ? resultData.uploaded : null;
-              const failed = resultData && typeof resultData.failed === 'number' ? resultData.failed : null;
-              const errors = resultData && Array.isArray(resultData.errors) ? resultData.errors : null;
-
-              if (failed && failed > 0) {
-                const uploadedCount = uploaded != null ? uploaded : 0;
-                updateStatus('上传完成(有错误)', 'error', '上传失败: 成功 ' + uploadedCount + ' 条，失败 ' + failed + ' 条');
-                addLog('上传结果: 成功 ' + uploadedCount + ' 条，失败 ' + failed + ' 条', 'error');
-              } else {
-                updateStatus('上传成功!', 'success', '上传成功');
-                if (uploaded != null && failed != null) {
-                  addLog('上传结果: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条', 'info');
-                } else {
-                  addLog('数据已成功上传到 Lark', 'info');
-                }
-              }
-
-              if (errors && errors.length > 0) {
-                addLog('写入失败明细(前3条): ' + JSON.stringify(errors.slice(0, 3)), 'error');
-              }
-            } else {
-              const errorText = await uploadResponse.text();
-              updateStatus('上传失败', 'error', '上传失败: HTTP ' + uploadResponse.status);
-              addLog('上传失败: ' + uploadResponse.status, 'error');
-              if (errorText) addLog('服务端返回: ' + errorText, 'error');
-            }
-          } catch (uploadError) {
-            updateStatus('上传失败', 'error', '上传失败: ' + ((uploadError && uploadError.message) ? uploadError.message : String(uploadError)));
-            const name = uploadError && uploadError.name ? uploadError.name : 'Error';
-            const message = uploadError && uploadError.message ? uploadError.message : String(uploadError);
-            addLog('上传失败: ' + name + ': ' + message, 'error');
-            addLog('排查: 确认 Vercel 已重新部署、URL 为 https 且路径是 /api/upload', 'error');
-          }
-
-          await sendToBackground({ action: 'stopCollection' });
-          if (statusState.type !== 'error') collectBtn.disabled = false;
-        }, 5000);
+        updateStatus('正在后台上传数据...', 'collecting');
+        const triggerResp = await sendToBackground({
+          action: 'finalizeCollectionUpload',
+          project_name: projectName || '',
+          buyer_name: buyerName || '',
+          upload_mode: uploadMode || '日报',
+          api_endpoint: apiEndpoint
+        });
+        if (!triggerResp || !triggerResp.success) {
+          updateStatus('上传失败', 'error', '上传失败: ' + ((triggerResp && triggerResp.error) || 'unknown'));
+          return;
+        }
+        await pollUploadTaskResult();
       };
 
       findAndClickRefreshButton(tab.id, async function(success, error) {
@@ -532,7 +482,7 @@
       updateStatus('发生错误', 'error', '采集失败: ' + error.message);
       addLog('错误: ' + error.message, 'error');
       await sendToBackground({ action: 'stopCollection' });
-      if (statusState.type !== 'error') collectBtn.disabled = false;
+      if (statusState.type !== 'success' && statusState.type !== 'error') collectBtn.disabled = false;
     }
   });
 
@@ -541,6 +491,9 @@
   }
   if (buyerNameInput) {
     buyerNameInput.addEventListener('change', saveSettings);
+  }
+  if (uploadModeInput) {
+    uploadModeInput.addEventListener('change', saveSettings);
   }
   if (refreshOptionsBtn) {
     refreshOptionsBtn.addEventListener('click', function() {
@@ -554,12 +507,35 @@
     statusNoteEl.addEventListener('click', function() {
       if (!statusNoteEl.textContent) return;
       const isVisible = logEl.style.display !== 'none';
+      logViewMode = 'status';
       logEl.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        renderStatusHistory();
+      }
+      persistUIState();
+    });
+  }
+  if (toggleLogBtn && logEl) {
+    toggleLogBtn.addEventListener('click', function() {
+      const isVisible = logEl.style.display !== 'none';
+      logViewMode = 'detail';
+      logEl.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        renderDetailLogs();
+      }
+      persistUIState();
+    });
+  }
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', function() {
+      statusHistoryEntries = [];
+      renderStatusHistory();
       persistUIState();
     });
   }
   logEl.style.display = 'none';
 
   loadSettings();
-  addLog('插件已就绪，请在广告平台报表页面使用', 'info');
+  syncUploadTaskStateFromBackground();
+  addLog('插件已就绪，请在广告平台报表页面使用', 'info', false);
 })();

@@ -10,16 +10,41 @@
       padding: 0;
       box-sizing: border-box;
     }
+    html {
+      background: transparent;
+      border-radius: 14px;
+    }
     body {
       width: 320px;
-      padding: 16px;
+      padding: 18px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #1a1a2e;
       color: #eee;
+      border-radius: 14px;
+      border: 1px solid #2f3a5e;
+      overflow: hidden;
     }
     .header {
+      margin-bottom: 16px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: #ffd89c;
+      border: 1px solid #6b5331;
+      background: #2d2418;
+    }
+    .header-title {
       text-align: center;
-      margin-bottom: 12px;
     }
     .icon-btn {
       width: 28px;
@@ -46,7 +71,7 @@
     }
     .btn {
       width: 100%;
-      padding: 12px;
+      padding: 13px;
       border: none;
       border-radius: 8px;
       font-size: 14px;
@@ -73,6 +98,9 @@
     .btn-primary:disabled {
       background: #444;
       cursor: not-allowed;
+    }
+    .btn-primary.state-success:disabled {
+      background: #1f9d65;
     }
     .btn-primary.state-error:disabled {
       background: #d64545;
@@ -104,32 +132,56 @@
       color: #fff;
     }
     .log {
-      margin-top: 12px;
-      padding: 8px;
+      margin-top: 14px;
+      padding: 10px;
       background: #0d0d1a;
       border-radius: 8px;
       font-size: 11px;
       max-height: 120px;
+    }
+    .log-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 6px;
+    }
+    .log-clear-btn {
+      border: 1px solid #3d3d54;
+      background: #1f1f30;
+      color: #aaa;
+      font-size: 11px;
+      border-radius: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    .log-clear-btn:hover {
+      color: #fff;
+      background: #2a2a40;
+    }
+    .log-list {
+      max-height: 110px;
       overflow-y: auto;
     }
     .log-entry {
-      padding: 2px 0;
+      padding: 4px 0;
       color: #888;
     }
     .log-entry.info {
+      color: #4caf50;
+    }
+    .log-entry.success {
       color: #4caf50;
     }
     .log-entry.error {
       color: #f44336;
     }
     .input-group {
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
     .input-group label {
       display: block;
       font-size: 12px;
       color: #888;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
     .field-label-row {
       display: flex;
@@ -149,17 +201,20 @@
     .input-group input,
     .input-group select {
       width: 100%;
-      padding: 8px;
-      border: 1px solid #444;
+      padding: 10px;
+      border: 1px solid #6d7fb3;
       border-radius: 6px;
-      background: #2d2d44;
-      color: #fff;
+      background: #c7d5f6;
+      color: #16203a;
       font-size: 13px;
     }
     .input-group input:focus,
     .input-group select:focus {
       outline: none;
       border-color: #1877f2;
+    }
+    .input-group select {
+      border-radius: 10px;
     }
     .action-row {
       display: flex;
@@ -169,11 +224,13 @@
       flex: 1;
     }
     .status-note {
-      margin-top: 8px;
-      min-height: 16px;
+      margin-top: 10px;
+      min-height: 18px;
       font-size: 12px;
       text-align: center;
       color: #888;
+      cursor: pointer;
+      user-select: none;
     }
     .status-note.success {
       color: #4caf50;
@@ -185,7 +242,13 @@
 </head>
 <body>
   <div class="header">
-    <h1>📊 广告报表同步助手</h1>
+    <div class="header-top">
+      <span class="mode-badge">调试模式: 日期校验已关闭</span>
+      <button class="icon-btn" id="toggleLogBtn" title="显示日志">📝</button>
+    </div>
+    <div class="header-title">
+      <h1>📊 广告报表同步助手</h1>
+    </div>
   </div>
 
   <div class="input-group">
@@ -201,12 +264,24 @@
     <select id="buyerName"></select>
   </div>
 
+  <div class="input-group">
+    <label>上传模式</label>
+    <select id="uploadMode">
+      <option value="日报">日报</option>
+    </select>
+  </div>
+
   <div class="action-row">
     <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
   </div>
   <div class="status-note" id="statusNote"></div>
 
-  <div class="log" id="log" style="display: none;"></div>
+  <div class="log" id="log" style="display: none;">
+    <div class="log-toolbar">
+      <button class="log-clear-btn" id="clearHistoryBtn">一键清空</button>
+    </div>
+    <div class="log-list" id="logList"></div>
+  </div>
 
   <script src="popup.js"></script>
 </body>

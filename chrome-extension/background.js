@@ -16,6 +16,77 @@ let recordKeptCount = 0;
 let collectingReady = false;
 let actionAggregateByDateKey = new Map();
 let resultAggregateByDateKey = new Map();
+let uploadTaskRunning = false;
+let lastUploadTaskResult = null;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setUploadTaskResult(type, message) {
+  lastUploadTaskResult = {
+    type,
+    message,
+    at: Date.now()
+  };
+}
+
+async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
+  if (uploadTaskRunning) return;
+  uploadTaskRunning = true;
+  try {
+    await sleep(5000);
+    const data = Array.isArray(collectedRecords) ? collectedRecords.slice(0) : [];
+    if (!data.length) {
+      setUploadTaskResult('error', '采集失败: 未检测到广告数据');
+      return;
+    }
+    const payload = {
+      operator: 'unknown',
+      project_name: projectName || '',
+      buyer_name: buyerName || '',
+      upload_mode: uploadMode || '日报',
+      timestamp: Math.floor(Date.now() / 60000) * 60000,
+      data
+    };
+    const response = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      let text = '';
+      try {
+        text = await response.text();
+      } catch (e) {}
+      if (text && (text.includes('Invalid date range') || text.includes('"expected"'))) {
+        setUploadTaskResult('error', '上传失败: 日期选择错误');
+      } else {
+        setUploadTaskResult('error', '上传失败: HTTP ' + response.status);
+      }
+      return;
+    }
+    let resultData = null;
+    try {
+      resultData = await response.json();
+    } catch (e) {}
+    const uploaded = resultData && typeof resultData.uploaded === 'number' ? resultData.uploaded : 0;
+    const failed = resultData && typeof resultData.failed === 'number' ? resultData.failed : 0;
+    if (failed > 0) {
+      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条');
+    } else {
+      setUploadTaskResult('success', '上传成功');
+    }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e);
+    setUploadTaskResult('error', '上传失败: ' + message);
+  } finally {
+    try {
+      await stopCollecting();
+    } catch (e) {}
+    uploadTaskRunning = false;
+  }
+}
 
 function log(...args) {
   console.log('[Facebook Ads Collector BG]', ...args);
@@ -28,6 +99,31 @@ function shouldCapture(url) {
     if (lowerUrl.includes(pattern)) return true;
   }
   return false;
+}
+
+function isAllowedAdsPage(url) {
+  if (!url || typeof url !== 'string') return false;
+  let u = null;
+  try {
+    u = new URL(url);
+  } catch (e) {
+    return false;
+  }
+  const host = (u.hostname || '').toLowerCase();
+  const path = (u.pathname || '').toLowerCase();
+  if (host.endsWith('adsmanager.facebook.com')) return true;
+  if (host.endsWith('business.facebook.com') && path.includes('/adsmanager')) return true;
+  if (host.endsWith('facebook.com') && path.includes('/adsmanager')) return true;
+  return false;
+}
+
+function syncActionEnabledForTab(tabId, url) {
+  if (typeof tabId !== 'number') return;
+  if (isAllowedAdsPage(url)) {
+    chrome.action.enable(tabId);
+    return;
+  }
+  chrome.action.disable(tabId);
 }
 
 function chromeDebuggerAttach(tabId, protocolVersion) {
@@ -441,6 +537,12 @@ function extractFacebookInsightsData(data) {
       const aggregate = actionAggregateByDateKey.get(dateKey);
       const resultAggregate = resultAggregateByDateKey.get(dateKey);
       const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName, ...resultValueByColumn };
+      if (
+        completeRegistrations !== null &&
+        !Object.prototype.hasOwnProperty.call(rawFields, 'actions:omni_complete_registration')
+      ) {
+        rawFields['actions:omni_complete_registration'] = completeRegistrations;
+      }
       if (resultIndicator) {
         rawFields.result_indicator = resultIndicator;
       }
@@ -525,6 +627,8 @@ async function startCollecting(tabId) {
   collectingReady = false;
   actionAggregateByDateKey = new Map();
   resultAggregateByDateKey = new Map();
+  uploadTaskRunning = false;
+  lastUploadTaskResult = null;
 
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
@@ -668,6 +772,83 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       },
     });
     return true;
+  }
+
+  if (action === 'finalizeCollectionUpload') {
+    const projectName = request && request.project_name;
+    const buyerName = request && request.buyer_name;
+    const uploadMode = request && request.upload_mode;
+    const apiEndpoint = request && request.api_endpoint;
+    if (!apiEndpoint) {
+      sendResponse({ success: false, error: 'api_endpoint required' });
+      return true;
+    }
+    if (uploadTaskRunning) {
+      sendResponse({ success: false, error: 'upload task running' });
+      return true;
+    }
+    lastUploadTaskResult = null;
+    Promise.resolve()
+      .then(() => runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint))
+      .catch((e) => {
+        const message = e && e.message ? e.message : String(e);
+        setUploadTaskResult('error', '上传失败: ' + message);
+      });
+    sendResponse({ success: true, started: true });
+    return true;
+  }
+
+  if (action === 'getUploadTaskState') {
+    sendResponse({
+      success: true,
+      running: uploadTaskRunning,
+      result: lastUploadTaskResult
+    });
+    return true;
+  }
+
+  if (action === 'clearUploadTaskResult') {
+    lastUploadTaskResult = null;
+    sendResponse({ success: true });
+    return true;
+  }
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError) return;
+    syncActionEnabledForTab(tabId, tab && tab.url);
+  });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const nextUrl = (changeInfo && changeInfo.url) || (tab && tab.url);
+  if (!nextUrl) return;
+  syncActionEnabledForTab(tabId, nextUrl);
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.tabs.query({}, (tabs) => {
+    if (chrome.runtime.lastError || !Array.isArray(tabs)) return;
+    for (const tab of tabs) {
+      syncActionEnabledForTab(tab.id, tab.url);
+    }
+  });
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.tabs.query({}, (tabs) => {
+    if (chrome.runtime.lastError || !Array.isArray(tabs)) return;
+    for (const tab of tabs) {
+      syncActionEnabledForTab(tab.id, tab.url);
+    }
+  });
+});
+
+chrome.tabs.query({}, (tabs) => {
+  if (chrome.runtime.lastError || !Array.isArray(tabs)) return;
+  for (const tab of tabs) {
+    syncActionEnabledForTab(tab.id, tab.url);
   }
 });
 

@@ -5,6 +5,7 @@ const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_TABLE_ID = process.env.LARK_TABLE_ID || '';
 const API_TOKEN = process.env.API_TOKEN || '';
+const ENFORCE_DATE_VALIDATION = false;
 
 function normalizeFieldName(name) {
   return String(name || '')
@@ -178,6 +179,8 @@ function buildFieldMapping(fieldsItems) {
     results: pickField(fieldsIndex, ['results', '成效', '结果']),
     cost_per_result: pickField(fieldsIndex, ['cost_per_result', '单次成效费用', '单次结果费用', '每结果费用']),
     complete_registrations: pickField(fieldsIndex, ['complete_registrations', 'complete_registration', '完成注册次数', '注册完成次数']),
+    actions_omni_complete_registration: pickField(fieldsIndex, ['actions:omni_complete_registration', 'omni_complete_registration', '完成注册次数']),
+    upload_mode: pickField(fieldsIndex, ['upload_mode', 'uploadmode', '上传模式', '模式']),
     operator: pickField(fieldsIndex, ['operator', '操作人', '操作者', '采集人']),
     username: pickField(fieldsIndex, ['username', 'user', '用户名', '用户']),
     project_name: pickField(fieldsIndex, ['project_name', 'project', '项目名称', '项目']),
@@ -202,6 +205,13 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.results, record.results, 'number');
   setBitableFieldValue(fields, mapping.cost_per_result, record.cost_per_result, 'number');
   setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
+  setBitableFieldValue(
+    fields,
+    mapping.actions_omni_complete_registration,
+    record['actions:omni_complete_registration'],
+    'number'
+  );
+  setBitableFieldValue(fields, mapping.upload_mode, record.upload_mode || '', 'text');
   setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
   setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
   setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
@@ -252,7 +262,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { operator, username, project_name, buyer_name, timestamp, data } = req.body;
+  const { operator, username, project_name, buyer_name, upload_mode, timestamp, data } = req.body;
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -266,18 +276,20 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Project and buyer are required' });
   }
 
-  const expectedDate = getYesterdayDateString();
-  const invalidRecord = data.find((record) => {
-    const range = extractDateRange(record);
-    return range.date_start !== expectedDate || range.date_stop !== expectedDate;
-  });
-  if (invalidRecord) {
-    const range = extractDateRange(invalidRecord);
-    return res.status(400).json({
-      error: 'Invalid date range',
-      expected: expectedDate,
-      actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+  if (ENFORCE_DATE_VALIDATION) {
+    const expectedDate = getYesterdayDateString();
+    const invalidRecord = data.find((record) => {
+      const range = extractDateRange(record);
+      return range.date_start !== expectedDate || range.date_stop !== expectedDate;
     });
+    if (invalidRecord) {
+      const range = extractDateRange(invalidRecord);
+      return res.status(400).json({
+        error: 'Invalid date range',
+        expected: expectedDate,
+        actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+      });
+    }
   }
 
   if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_TABLE_ID) {
@@ -307,6 +319,7 @@ module.exports = async function handler(req, res) {
             username: username || operator,
             project_name: project_name,
             buyer_name: buyer_name,
+            upload_mode: upload_mode || '日报',
             timestamp: timestamp
           },
           fieldMapping,
