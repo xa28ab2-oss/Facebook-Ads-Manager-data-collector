@@ -45,5 +45,14 @@ Review steps:
 Single purpose:
 This extension only syncs Facebook Ads Manager report data to Lark Bitable for business reporting.
 
+五、图标说明
+
+本扩展已生成符合 Chrome Web Store 要求的图标：
+- `chrome-extension/icons/icon16.png` (16x16)
+- `chrome-extension/icons/icon48.png` (48x48)
+- `chrome-extension/icons/icon128.png` (128x128) - 用于商店展示
+
+图标设计结合了 Facebook 蓝色调、数据报表（柱状图）以及同步符号，直观展示了“广告报表同步”的核心功能。
+
 Why debugger is required:
 Ads Manager report data is rendered from dynamic network responses. The extension must use chrome.debugger Network domain to read report payload reliably from the current Ads Manager tab.
