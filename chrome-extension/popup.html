@@ -228,6 +228,16 @@
     .status-note.error {
       color: #f44336;
     }
+    .usage-note {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #304067;
+      background: #1b2440;
+      color: #9fb3e8;
+      font-size: 11px;
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
@@ -260,6 +270,7 @@
   <div class="action-row">
     <button class="btn btn-primary" id="collectBtn">开始采集数据</button>
   </div>
+  <div class="usage-note">仅在你点击“开始采集数据”后，读取当前 Ads Manager 页面报表数据并上传到你配置的业务表。</div>
   <div class="status-note" id="statusNote"></div>
 
   <div class="log" id="log" style="display: none;">

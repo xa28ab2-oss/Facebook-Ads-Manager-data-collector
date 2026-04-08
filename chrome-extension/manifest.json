@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "广告报表同步助手",
   "version": "1.0.1",
-  "description": "采集多平台广告报表并同步到多维表格",
+  "description": "采集 Facebook Ads Manager 报表并同步到 Lark 多维表格",
   "permissions": [
     "activeTab",
     "tabs",
@@ -11,8 +11,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.facebook.com/*",
-    "*://*.business.facebook.com/*",
+    "*://*.facebook.com/adsmanager*",
+    "*://*.business.facebook.com/adsmanager*",
     "*://*.adsmanager.facebook.com/*",
     "*://*.adsmanager-graph.facebook.com/*"
   ],
@@ -22,8 +22,8 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.facebook.com/*",
-        "*://*.business.facebook.com/*",
+        "*://*.facebook.com/adsmanager*",
+        "*://*.business.facebook.com/adsmanager*",
         "*://*.adsmanager.facebook.com/*"
       ],
       "js": ["content.js"],
