@@ -203,10 +203,12 @@ function buildFieldMapping(fieldsItems) {
 
 function buildFieldsPayload(record, mapping, fieldsItems) {
   const fields = {};
+  const raw = record && record.raw_fields ? record.raw_fields : {};
+  const spendValue = record.spend !== undefined && record.spend !== null ? record.spend : raw.spend;
 
   setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
   setBitableFieldValue(fields, mapping.budget, record.budget, 'number');
-  setBitableFieldValue(fields, mapping.spend, record.spend, 'number');
+  setBitableFieldValue(fields, mapping.spend, spendValue, 'number');
   setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
   setBitableFieldValue(fields, mapping.clicks, record.clicks, 'number');
   setBitableFieldValue(fields, mapping.unique_link_clicks, record.unique_link_clicks, 'number');
