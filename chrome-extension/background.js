@@ -611,7 +611,10 @@ function upsertRecords(records) {
     if (idx === -1) {
       collectedRecords.push(record);
     } else {
-      collectedRecords[idx] = { ...collectedRecords[idx], ...record };
+      const prev = collectedRecords[idx] || {};
+      const prevRaw = prev && prev.raw_fields ? prev.raw_fields : {};
+      const nextRaw = record && record.raw_fields ? record.raw_fields : {};
+      collectedRecords[idx] = { ...prev, ...record, raw_fields: { ...prevRaw, ...nextRaw } };
     }
   }
 }
