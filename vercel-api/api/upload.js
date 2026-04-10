@@ -113,29 +113,6 @@ function extractDateRange(record) {
   };
 }
 
-function extractSpendValue(record) {
-  const raw = record && record.raw_fields ? record.raw_fields : {};
-  const candidates = [
-    record && record.spend,
-    record && record.amount_spent,
-    record && record.cost,
-    raw && raw.spend,
-    raw && raw.amount_spent,
-    raw && raw.total_spend,
-    raw && raw.cost,
-    raw && raw['已花费金额'],
-    raw && raw['花费金额'],
-    raw && raw['消耗']
-  ];
-  for (const value of candidates) {
-    if (value === null || value === undefined) continue;
-    const text = String(value).trim();
-    if (!text || text === 'null' || text === '-' || text === '—') continue;
-    return value;
-  }
-  return undefined;
-}
-
 function buildSourceValueMap(record) {
   const map = new Map();
   if (!record || typeof record !== 'object') return map;
@@ -226,11 +203,10 @@ function buildFieldMapping(fieldsItems) {
 
 function buildFieldsPayload(record, mapping, fieldsItems) {
   const fields = {};
-  const spendValue = extractSpendValue(record);
 
   setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
   setBitableFieldValue(fields, mapping.budget, record.budget, 'number');
-  setBitableFieldValue(fields, mapping.spend, spendValue, 'number');
+  setBitableFieldValue(fields, mapping.spend, record.spend, 'number');
   setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
   setBitableFieldValue(fields, mapping.clicks, record.clicks, 'number');
   setBitableFieldValue(fields, mapping.unique_link_clicks, record.unique_link_clicks, 'number');
