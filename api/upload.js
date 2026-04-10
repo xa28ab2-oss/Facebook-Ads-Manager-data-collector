@@ -2,6 +2,7 @@ const LARK_APP_TOKEN = process.env.LARK_APP_TOKEN || '';
 const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_TABLE_ID = process.env.LARK_TABLE_ID || '';
+const LARK_REFLUX_TABLE_ID = process.env.LARK_REFLUX_TABLE_ID || 'tbltYWkcfzX1AnOS';
 const API_TOKEN = process.env.API_TOKEN || '';
 const ENFORCE_DATE_VALIDATION = true;
 
@@ -97,6 +98,12 @@ function getYesterdayDateString() {
   return formatDate(yesterday);
 }
 
+function getDayBeforeYesterdayDateString() {
+  const now = new Date();
+  const dayBeforeYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
+  return formatDate(dayBeforeYesterday);
+}
+
 function extractDateRange(record) {
   const raw = record && record.raw_fields ? record.raw_fields : {};
   return {
@@ -153,8 +160,8 @@ async function getTenantAccessToken() {
   return data.tenant_access_token || '';
 }
 
-async function listBitableFields(tenantAccessToken) {
-  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${LARK_TABLE_ID}/fields?page_size=200`;
+async function listBitableFields(tenantAccessToken, tableId) {
+  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${tableId}/fields?page_size=200`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -185,7 +192,9 @@ function buildFieldMapping(fieldsItems) {
     buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
-    date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期'])
+    date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期']),
+    data_start: pickField(fieldsIndex, ['data_start', 'datastart']),
+    data_stop: pickField(fieldsIndex, ['data_stop', 'datastop'])
   };
 
   return mapping;
@@ -217,6 +226,8 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
+  setBitableFieldValue(fields, mapping.data_start, record.date_start || '', 'datetime');
+  setBitableFieldValue(fields, mapping.data_stop, record.date_stop || '', 'datetime');
 
   const fieldsIndex = buildFieldNameIndex(fieldsItems || []);
   const sourceMap = buildSourceValueMap(record);
@@ -230,8 +241,8 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   return fields;
 }
 
-async function addRecordToBitable(tenantAccessToken, fieldsPayload) {
-  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${LARK_TABLE_ID}/records`;
+async function addRecordToBitable(tenantAccessToken, fieldsPayload, tableId) {
+  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${tableId}/records`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -261,6 +272,8 @@ module.exports = async function handler(req, res) {
   }
 
   const { operator, username, project_name, buyer_name, upload_mode, timestamp, data } = req.body || {};
+  const normalizedUploadMode = upload_mode === '回流' ? '回流' : '日报';
+  const targetTableId = normalizedUploadMode === '回流' ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -275,7 +288,9 @@ module.exports = async function handler(req, res) {
   }
 
   if (ENFORCE_DATE_VALIDATION) {
-    const expectedDate = getYesterdayDateString();
+    const expectedDate = normalizedUploadMode === '回流'
+      ? getDayBeforeYesterdayDateString()
+      : getYesterdayDateString();
     const invalidRecord = data.find((record) => {
       const range = extractDateRange(record);
       return range.date_start !== expectedDate || range.date_stop !== expectedDate;
@@ -290,7 +305,7 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_TABLE_ID) {
+  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !targetTableId) {
     return res.status(500).json({ error: 'Lark API configuration missing' });
   }
 
@@ -301,7 +316,7 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to get tenant access token' });
     }
 
-    const fieldsResp = await listBitableFields(tenantAccessToken);
+    const fieldsResp = await listBitableFields(tenantAccessToken, targetTableId);
     const fieldsItems = (fieldsResp && fieldsResp.data && Array.isArray(fieldsResp.data.items)) ? fieldsResp.data.items : [];
     const fieldMapping = buildFieldMapping(fieldsItems);
 
@@ -317,7 +332,7 @@ module.exports = async function handler(req, res) {
             username: username || operator,
             project_name: project_name,
             buyer_name: buyer_name,
-            upload_mode: upload_mode || '日报',
+            upload_mode: normalizedUploadMode,
             timestamp: timestamp
           },
           fieldMapping,
@@ -333,7 +348,7 @@ module.exports = async function handler(req, res) {
           continue;
         }
 
-        const result = await addRecordToBitable(tenantAccessToken, fieldsPayload);
+        const result = await addRecordToBitable(tenantAccessToken, fieldsPayload, targetTableId);
 
         if (result.code && result.code !== 0) {
           errors.push({
