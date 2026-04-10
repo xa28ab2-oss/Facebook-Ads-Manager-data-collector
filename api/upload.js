@@ -193,8 +193,8 @@ function buildFieldMapping(fieldsItems) {
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
     date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期']),
-    data_start: pickField(fieldsIndex, ['data_start', 'datastart']),
-    data_stop: pickField(fieldsIndex, ['data_stop', 'datastop'])
+    data_start: pickField(fieldsIndex, ['data_start', 'datastart', 'date_start', 'datestart', '开始日期']),
+    data_stop: pickField(fieldsIndex, ['data_stop', 'datastop', 'date_stop', 'datestop', '结束日期'])
   };
 
   return mapping;
@@ -317,7 +317,21 @@ module.exports = async function handler(req, res) {
     }
 
     const fieldsResp = await listBitableFields(tenantAccessToken, targetTableId);
+    if (fieldsResp && typeof fieldsResp.code === 'number' && fieldsResp.code !== 0) {
+      return res.status(500).json({
+        error: 'Failed to list bitable fields',
+        table_id: targetTableId,
+        code: fieldsResp.code,
+        msg: fieldsResp.msg || 'unknown'
+      });
+    }
     const fieldsItems = (fieldsResp && fieldsResp.data && Array.isArray(fieldsResp.data.items)) ? fieldsResp.data.items : [];
+    if (!fieldsItems.length) {
+      return res.status(500).json({
+        error: 'No fields found in target table',
+        table_id: targetTableId
+      });
+    }
     const fieldMapping = buildFieldMapping(fieldsItems);
 
     const results = [];
@@ -340,10 +354,13 @@ module.exports = async function handler(req, res) {
         );
 
         if (!fieldsPayload || Object.keys(fieldsPayload).length === 0) {
+          const availableFields = fieldsItems.map((f) => f.field_name).filter(Boolean);
           errors.push({
             campaign_name: record.campaign_name,
             code: 1254045,
-            error: 'FieldNameNotFound'
+            error: 'FieldNameNotFound: no matched columns in target table',
+            table_id: targetTableId,
+            available_fields: availableFields
           });
           continue;
         }
