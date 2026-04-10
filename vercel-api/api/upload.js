@@ -177,7 +177,7 @@ function buildFieldMapping(fieldsItems) {
 
   const mapping = {
     campaign_name: pickField(fieldsIndex, ['campaign_name', 'campaignname', 'campaign', '广告系列', '广告系列名称', '系列名称']),
-    spend: pickField(fieldsIndex, ['spend', 'cost', 'amountspent', '已花费金额', '花费', '花费金额', '消耗']),
+    spend: pickField(fieldsIndex, ['spend', 'cost', 'amountspent', '已花费金额', '花费', '花费金额', '消耗', '回流消耗']),
     budget: pickField(fieldsIndex, ['budget', '预算', '日预算', '总预算', 'lifetimebudget', 'dailybudget']),
     impressions: pickField(fieldsIndex, ['impressions', '展示次数', '展示', '展现次数']),
     clicks: pickField(fieldsIndex, ['clicks', '点击次数', '点击']),
