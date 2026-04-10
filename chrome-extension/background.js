@@ -73,7 +73,11 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
     const uploaded = resultData && typeof resultData.uploaded === 'number' ? resultData.uploaded : 0;
     const failed = resultData && typeof resultData.failed === 'number' ? resultData.failed : 0;
     if (failed > 0) {
-      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条');
+      const firstError = resultData && Array.isArray(resultData.errors) && resultData.errors[0]
+        ? (resultData.errors[0].error || resultData.errors[0].msg || '')
+        : '';
+      const detail = firstError ? '，首条错误: ' + firstError : '';
+      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail);
     } else {
       setUploadTaskResult('success', '上传成功');
     }
