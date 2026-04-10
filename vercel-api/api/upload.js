@@ -100,10 +100,9 @@ function getYesterdayDateString() {
   return formatDate(yesterday);
 }
 
-function getDayBeforeYesterdayDateString() {
+function getTodayDateString() {
   const now = new Date();
-  const dayBeforeYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
-  return formatDate(dayBeforeYesterday);
+  return formatDate(now);
 }
 
 function extractDateRange(record) {
@@ -290,20 +289,38 @@ module.exports = async function handler(req, res) {
   }
 
   if (ENFORCE_DATE_VALIDATION) {
-    const expectedDate = normalizedUploadMode === '回流'
-      ? getDayBeforeYesterdayDateString()
-      : getYesterdayDateString();
-    const invalidRecord = data.find((record) => {
-      const range = extractDateRange(record);
-      return range.date_start !== expectedDate || range.date_stop !== expectedDate;
-    });
-    if (invalidRecord) {
-      const range = extractDateRange(invalidRecord);
-      return res.status(400).json({
-        error: 'Invalid date range',
-        expected: expectedDate,
-        actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+    if (normalizedUploadMode === '回流') {
+      const today = getTodayDateString();
+      const yesterday = getYesterdayDateString();
+      const invalidRecord = data.find((record) => {
+        const range = extractDateRange(record);
+        const start = range.date_start || '';
+        const stop = range.date_stop || '';
+        if (!start || !stop) return true;
+        return start === today || start === yesterday || stop === today || stop === yesterday;
       });
+      if (invalidRecord) {
+        const range = extractDateRange(invalidRecord);
+        return res.status(400).json({
+          error: 'Invalid date range for reflux mode',
+          disallowed: [today, yesterday],
+          actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+        });
+      }
+    } else {
+      const expectedDate = getYesterdayDateString();
+      const invalidRecord = data.find((record) => {
+        const range = extractDateRange(record);
+        return range.date_start !== expectedDate || range.date_stop !== expectedDate;
+      });
+      if (invalidRecord) {
+        const range = extractDateRange(invalidRecord);
+        return res.status(400).json({
+          error: 'Invalid date range',
+          expected: expectedDate,
+          actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+        });
+      }
     }
   }
 
