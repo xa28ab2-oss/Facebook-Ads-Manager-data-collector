@@ -2,7 +2,7 @@ const LARK_APP_TOKEN = process.env.LARK_APP_TOKEN || '';
 const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_TABLE_ID = process.env.LARK_TABLE_ID || '';
-const LARK_REFLUX_TABLE_ID = process.env.LARK_REFLUX_TABLE_ID || 'tbltYWkcfzX1AnOS';
+const LARK_REFLUX_TABLE_ID = process.env.LARK_REFLUX_TABLE_ID || '';
 const API_TOKEN = process.env.API_TOKEN || '';
 const ENFORCE_DATE_VALIDATION = true;
 
