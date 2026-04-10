@@ -62,7 +62,12 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       if (text && (text.includes('Invalid date range') || text.includes('"expected"'))) {
         setUploadTaskResult('error', '上传失败: 日期选择错误');
       } else {
-        setUploadTaskResult('error', '上传失败: HTTP ' + response.status);
+        let detail = '';
+        if (text) {
+          detail = text.replace(/\s+/g, ' ').trim();
+          if (detail.length > 180) detail = detail.slice(0, 180) + '...';
+        }
+        setUploadTaskResult('error', '上传失败: HTTP ' + response.status + (detail ? '，' + detail : ''));
       }
       return;
     }
