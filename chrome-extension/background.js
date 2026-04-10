@@ -516,10 +516,12 @@ function extractFacebookInsightsData(data) {
       if (!campaignId) {
         if (!dateStart && !dateStop) continue;
       }
+      const objectiveValue = normalizeValue(objective);
+      if (!objectiveValue || objectiveValue.toUpperCase() !== 'MULTIPLE') continue;
       recordCandidateCount += 1;
 
       const reach = pickAtomicValue(atomicByName, ['reach']);
-      const spend = pickAtomicValue(atomicByName, ['spend', 'amount_spent', 'total_spend', 'cost']);
+      const spend = normalizeValue(atomicByName.spend);
       const impressions = pickAtomicValue(atomicByName, ['impressions', 'total_impressions']);
       const clicks = pickAtomicValue(atomicByName, [
         'unique_link_clicks',
