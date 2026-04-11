@@ -227,7 +227,7 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
   setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
   setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
-  setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || '', 'text');
+  setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || raw.ad_account_id || '', 'text');
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
