@@ -56,6 +56,34 @@ function parseUploadErrorMessage(responseStatus, responseText) {
   return '上传失败: HTTP ' + responseStatus + (detail ? '，' + detail : '');
 }
 
+function collectMissingFieldLabels(records) {
+  const required = [
+    { label: '消耗', keys: ['spend'] },
+    { label: '成效', keys: ['results'] },
+    { label: '覆盖人数', keys: ['reach'] },
+    { label: '展示量', keys: ['impressions'] },
+    { label: '点击量（全部）', keys: ['clicks'] },
+    { label: '完成注册次数', keys: ['omni_complete_registration', 'complete_registrations', 'complete_registration'] }
+  ];
+  const missing = [];
+  for (const field of required) {
+    let found = false;
+    for (const record of records) {
+      const raw = record && record.raw_fields ? record.raw_fields : {};
+      for (const key of field.keys) {
+        const value = record && record[key] !== undefined ? record[key] : raw[key];
+        if (normalizeValue(value) !== null) {
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) missing.push(field.label);
+  }
+  return missing;
+}
+
 async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
   if (uploadTaskRunning) return;
   uploadTaskRunning = true;
@@ -66,6 +94,8 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       setUploadTaskResult('error', '采集失败: 未检测到广告数据');
       return;
     }
+    const missingLabels = collectMissingFieldLabels(data);
+    const missingHint = missingLabels.length ? '；缺少字段：' + missingLabels.join('、') : '';
     const payload = {
       operator: 'unknown',
       project_name: projectName || '',
@@ -98,9 +128,9 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
         ? (resultData.errors[0].error || resultData.errors[0].msg || '')
         : '';
       const detail = firstError ? '，首条错误: ' + firstError : '';
-      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail);
+      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail + missingHint);
     } else {
-      setUploadTaskResult('success', '上传成功');
+      setUploadTaskResult('success', '上传成功' + (missingHint ? '（' + missingHint.slice(1) + '）' : ''));
     }
   } catch (e) {
     const message = e && e.message ? e.message : String(e);
