@@ -1,7 +1,8 @@
 const LARK_APP_TOKEN = process.env.LARK_APP_TOKEN || '';
 const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
-const LARK_CONFIG_TABLE_ID = process.env.LARK_CONFIG_TABLE_ID || '';
+const LARK_BUYER_TABLE_ID = process.env.LARK_BUYER_TABLE_ID || process.env.LARK_CONFIG_TABLE_ID || '';
+const LARK_PROJECT_TABLE_ID = process.env.LARK_PROJECT_TABLE_ID || '';
 
 function normalizeFieldName(name) {
   return String(name || '')
@@ -10,14 +11,28 @@ function normalizeFieldName(name) {
     .trim();
 }
 
-function coerceValue(value) {
-  if (value === null || value === undefined) return '';
-  if (Array.isArray(value)) return value.length ? String(value[0]) : '';
-  if (typeof value === 'object') return '';
-  return String(value);
+function extractStringValues(value) {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) {
+    const result = [];
+    for (const item of value) {
+      const items = extractStringValues(item);
+      for (const v of items) result.push(v);
+    }
+    return result;
+  }
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, 'text')) return extractStringValues(value.text);
+    if (Object.prototype.hasOwnProperty.call(value, 'name')) return extractStringValues(value.name);
+    if (Object.prototype.hasOwnProperty.call(value, 'value')) return extractStringValues(value.value);
+    return [];
+  }
+  const text = String(value).trim();
+  if (!text || text === 'null' || text === '-' || text === '—') return [];
+  return [text];
 }
 
-function pickFieldValue(fields, candidates) {
+function pickFieldValues(fields, candidates) {
   if (!fields || typeof fields !== 'object') return '';
   const normalized = new Map();
   for (const key of Object.keys(fields)) {
@@ -25,9 +40,9 @@ function pickFieldValue(fields, candidates) {
   }
   for (const candidate of candidates) {
     const hit = normalized.get(normalizeFieldName(candidate));
-    if (hit !== undefined) return coerceValue(hit).trim();
+    if (hit !== undefined) return extractStringValues(hit);
   }
-  return '';
+  return [];
 }
 
 async function getTenantAccessToken() {
@@ -45,10 +60,10 @@ async function getTenantAccessToken() {
   return data.tenant_access_token || '';
 }
 
-async function listBitableRecords(tenantAccessToken, pageToken) {
+async function listBitableRecords(tenantAccessToken, tableId, pageToken) {
   const params = new URLSearchParams({ page_size: '200' });
   if (pageToken) params.set('page_token', pageToken);
-  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${LARK_CONFIG_TABLE_ID}/records?${params.toString()}`;
+  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${tableId}/records?${params.toString()}`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -71,7 +86,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_CONFIG_TABLE_ID) {
+  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_BUYER_TABLE_ID || !LARK_PROJECT_TABLE_ID) {
     return res.status(500).json({ error: 'Lark API configuration missing' });
   }
 
@@ -83,19 +98,36 @@ module.exports = async function handler(req, res) {
 
     const projects = new Set();
     const buyers = new Set();
-    let pageToken = '';
+    let buyerPageToken = '';
     for (let i = 0; i < 5; i++) {
-      const resp = await listBitableRecords(tenantAccessToken, pageToken);
+      const resp = await listBitableRecords(tenantAccessToken, LARK_BUYER_TABLE_ID, buyerPageToken);
       const items = resp && resp.data && Array.isArray(resp.data.items) ? resp.data.items : [];
       for (const item of items) {
         const fields = item && item.fields ? item.fields : {};
-        const project = pickFieldValue(fields, ['项目名称', 'project_name', 'project', '项目']);
-        const buyer = pickFieldValue(fields, ['投手名称', 'buyer_name', 'buyer', '投手', '操盘手']);
-        if (project) projects.add(project);
-        if (buyer) buyers.add(buyer);
+        const buyerValues = pickFieldValues(fields, ['投手名称', 'buyer_name', 'buyer', '投手', '操盘手']);
+        for (const buyer of buyerValues) {
+          if (buyer) buyers.add(buyer);
+        }
       }
-      pageToken = resp && resp.data ? resp.data.page_token : '';
-      if (!pageToken) break;
+      buyerPageToken = resp && resp.data ? resp.data.page_token : '';
+      if (!buyerPageToken) break;
+    }
+
+    let projectPageToken = '';
+    for (let i = 0; i < 5; i++) {
+      const resp = await listBitableRecords(tenantAccessToken, LARK_PROJECT_TABLE_ID, projectPageToken);
+      const items = resp && resp.data && Array.isArray(resp.data.items) ? resp.data.items : [];
+      for (const item of items) {
+        const fields = item && item.fields ? item.fields : {};
+        for (const key of Object.keys(fields)) {
+          const values = extractStringValues(fields[key]);
+          for (const project of values) {
+            if (project) projects.add(project);
+          }
+        }
+      }
+      projectPageToken = resp && resp.data ? resp.data.page_token : '';
+      if (!projectPageToken) break;
     }
 
     res.status(200).json({
