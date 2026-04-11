@@ -33,17 +33,6 @@
       align-items: center;
       margin-bottom: 4px;
     }
-    .mode-badge {
-      margin-right: auto;
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      color: #ffd89c;
-      border: 1px solid #6b5331;
-      background: #2d2418;
-    }
     .header-title {
       text-align: center;
     }
@@ -194,10 +183,21 @@
       margin-bottom: 0;
     }
     .field-label-row .icon-btn {
-      width: 24px;
-      height: 24px;
-      font-size: 13px;
-      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+    #refreshOptionsBtn {
+      border-color: #ff5b5b;
+      background: #c62828;
+      color: #fff;
+      font-weight: 700;
+    }
+    #refreshOptionsBtn:hover {
+      border-color: #ff8787;
+      background: #e53935;
+      color: #fff;
     }
     .input-group input,
     .input-group select {
@@ -253,10 +253,6 @@
 </head>
 <body>
   <div class="header">
-    <div class="header-top">
-      <span class="mode-badge">调试模式</span>
-      <button class="icon-btn" id="toggleLogBtn" title="显示日志">📝</button>
-    </div>
     <div class="header-title">
       <h1>📊 广告报表同步助手</h1>
     </div>
