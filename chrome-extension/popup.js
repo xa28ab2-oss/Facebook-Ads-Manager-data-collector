@@ -1,6 +1,7 @@
 (function() {
   const collectBtn = document.getElementById('collectBtn');
   const statusNoteEl = document.getElementById('statusNote');
+  const toggleLogBtn = document.getElementById('toggleLogBtn');
   const logEl = document.getElementById('log');
   const logListEl = document.getElementById('logList');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
@@ -15,6 +16,7 @@
   let collectedData = [];
   let logEntries = [];
   let statusHistoryEntries = [];
+  let logViewMode = 'status';
   let lastConsumedUploadResultAt = 0;
   let statusState = { message: defaultCollectText, type: 'idle' };
   let statusResetTimer = null;
@@ -40,6 +42,18 @@
       logListEl.appendChild(item);
     }
     logListEl.scrollTop = 0;
+  }
+
+  function renderDetailLogs() {
+    if (!logListEl) return;
+    logListEl.innerHTML = '';
+    for (const entry of logEntries) {
+      const item = document.createElement('div');
+      item.className = 'log-entry ' + entry.type;
+      item.textContent = '[' + entry.time + '] ' + entry.message;
+      logListEl.appendChild(item);
+    }
+    logListEl.scrollTop = logListEl.scrollHeight;
   }
 
   function setStatusNote(message, type, recordHistory = true) {
@@ -90,6 +104,9 @@
     logEntries.push(entry);
     if (logEntries.length > 200) {
       logEntries = logEntries.slice(logEntries.length - 200);
+    }
+    if (logEl.style.display !== 'none' && logViewMode === 'detail') {
+      renderDetailLogs();
     }
     if (shouldPersist) {
       persistUIState();
@@ -202,6 +219,7 @@
         status: statusState,
         logs: logEntries,
         statusHistory: statusHistoryEntries,
+        logView: logViewMode,
         lastConsumedUploadResultAt,
         logVisible: logEl.style.display !== 'none',
         statusNote: statusNoteEl ? statusNoteEl.textContent : '',
@@ -227,6 +245,9 @@
         if (Array.isArray(uiState.statusHistory)) {
           statusHistoryEntries = uiState.statusHistory;
         }
+        if (typeof uiState.logView === 'string') {
+          logViewMode = uiState.logView === 'detail' ? 'detail' : 'status';
+        }
         if (typeof uiState.lastConsumedUploadResultAt === 'number') {
           lastConsumedUploadResultAt = uiState.lastConsumedUploadResultAt;
         }
@@ -235,7 +256,11 @@
           statusNoteEl.title = uiState.statusNote ? '点击查看历史记录' : '';
           statusNoteEl.className = 'status-note' + (uiState.statusNoteType ? ' ' + uiState.statusNoteType : '');
         }
-        renderStatusHistory();
+        if (logViewMode === 'detail') {
+          renderDetailLogs();
+        } else {
+          renderStatusHistory();
+        }
         if (typeof uiState.logVisible === 'boolean') {
           logEl.style.display = uiState.logVisible ? 'block' : 'none';
         } else {
@@ -482,9 +507,21 @@
     statusNoteEl.addEventListener('click', function() {
       if (!statusNoteEl.textContent) return;
       const isVisible = logEl.style.display !== 'none';
+      logViewMode = 'status';
       logEl.style.display = isVisible ? 'none' : 'block';
       if (!isVisible) {
         renderStatusHistory();
+      }
+      persistUIState();
+    });
+  }
+  if (toggleLogBtn && logEl) {
+    toggleLogBtn.addEventListener('click', function() {
+      const isVisible = logEl.style.display !== 'none';
+      logViewMode = 'detail';
+      logEl.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        renderDetailLogs();
       }
       persistUIState();
     });

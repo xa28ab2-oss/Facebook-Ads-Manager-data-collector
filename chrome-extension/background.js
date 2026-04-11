@@ -18,7 +18,6 @@ let actionAggregateByDateKey = new Map();
 let resultAggregateByDateKey = new Map();
 let uploadTaskRunning = false;
 let lastUploadTaskResult = null;
-let lastDetectedAdAccountId = '';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -376,7 +375,7 @@ function hasAnyMetricColumn(atomicColumns) {
 
 function extractFacebookInsightsData(data, adAccountId) {
   const records = [];
-  const accountId = adAccountId || lastDetectedAdAccountId || '';
+  const accountId = adAccountId || '';
   if (!data || !data.data || !Array.isArray(data.data)) return records;
 
   for (const dataset of data.data) {
@@ -644,7 +643,6 @@ async function startCollecting(tabId) {
   pendingResponseByRequestId = new Map();
   lastHeaders = null;
   campaignNameById = new Map();
-  lastDetectedAdAccountId = '';
   captureCount = 0;
   parsedCount = 0;
   datasetRowCount = 0;
@@ -696,12 +694,10 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
     const status = params && params.response && params.response.status;
     if (!requestId || !url || !shouldCapture(url)) return;
     if (typeof status === 'number' && (status < 200 || status >= 300)) return;
-    if (extractAdAccountIdFromUrl(url)) {
-      lastDetectedAdAccountId = extractAdAccountIdFromUrl(url);
-    }
+    const extractedAdAccountId = extractAdAccountIdFromUrl(url);
     pendingResponseByRequestId.set(requestId, {
       url,
-      adAccountId: extractAdAccountIdFromUrl(url)
+      adAccountId: extractedAdAccountId
     });
     captureCount += 1;
     return;
@@ -713,7 +709,7 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
     const requestInfo = pendingResponseByRequestId.get(requestId);
     if (!requestInfo || !requestInfo.url) return;
     const url = requestInfo.url;
-    const adAccountId = requestInfo.adAccountId || lastDetectedAdAccountId || '';
+    const adAccountId = requestInfo.adAccountId || '';
 
     pendingResponseByRequestId.delete(requestId);
 
