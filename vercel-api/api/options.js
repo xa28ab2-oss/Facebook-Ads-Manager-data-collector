@@ -75,6 +75,18 @@ async function listBitableRecords(tenantAccessToken, tableId, pageToken) {
   return await response.json();
 }
 
+async function listBitableFields(tenantAccessToken, tableId) {
+  const params = new URLSearchParams({ page_size: '500' });
+  const url = `https://open.larksuite.com/open-apis/bitable/v1/apps/${LARK_APP_TOKEN}/tables/${tableId}/fields?${params.toString()}`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': 'Bearer ' + tenantAccessToken
+    }
+  });
+  return await response.json();
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -130,6 +142,19 @@ module.exports = async function handler(req, res) {
       }
       projectPageToken = resp && resp.data ? resp.data.page_token : '';
       if (!projectPageToken) break;
+    }
+
+    const fieldResp = await listBitableFields(tenantAccessToken, LARK_PROJECT_TABLE_ID);
+    const fieldItems = fieldResp && fieldResp.data && Array.isArray(fieldResp.data.items) ? fieldResp.data.items : [];
+    for (const field of fieldItems) {
+      const property = field && field.property ? field.property : {};
+      const options = Array.isArray(property.options) ? property.options : [];
+      for (const option of options) {
+        const names = extractStringValues(option && (option.name || option.text || option.value));
+        for (const name of names) {
+          if (name) projects.add(name);
+        }
+      }
     }
 
     res.status(200).json({
