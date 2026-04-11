@@ -56,15 +56,22 @@ function parseUploadErrorMessage(responseStatus, responseText) {
   return '上传失败: HTTP ' + responseStatus + (detail ? '，' + detail : '');
 }
 
+function normalizeMetricKey(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[\s_\-]+/g, '')
+    .trim();
+}
+
 function collectMissingFieldLabels(records) {
   const headerAtomicColumns = new Set(
     ((lastHeaders && Array.isArray(lastHeaders.atomic_columns)) ? lastHeaders.atomic_columns : [])
-      .map((name) => normalizeFieldName(name))
+      .map((name) => normalizeMetricKey(name))
       .filter(Boolean)
   );
   const headerResultColumns = new Set(
     ((lastHeaders && Array.isArray(lastHeaders.result_columns)) ? lastHeaders.result_columns : [])
-      .map((name) => normalizeFieldName(name))
+      .map((name) => normalizeMetricKey(name))
       .filter(Boolean)
   );
   const required = [
@@ -102,7 +109,7 @@ function collectMissingFieldLabels(records) {
     }
     if (!found && Array.isArray(field.headerAtomicKeys)) {
       for (const key of field.headerAtomicKeys) {
-        if (headerAtomicColumns.has(normalizeFieldName(key))) {
+        if (headerAtomicColumns.has(normalizeMetricKey(key))) {
           found = true;
           break;
         }
@@ -110,7 +117,7 @@ function collectMissingFieldLabels(records) {
     }
     if (!found && Array.isArray(field.headerResultKeys)) {
       for (const key of field.headerResultKeys) {
-        if (headerResultColumns.has(normalizeFieldName(key))) {
+        if (headerResultColumns.has(normalizeMetricKey(key))) {
           found = true;
           break;
         }
