@@ -45,6 +45,9 @@ function parseUploadErrorMessage(responseStatus, responseText) {
   if (errorText.includes('date_start and date_stop must be the same date')) {
     return '上传失败: 日期范围错误（' + (uploadMode || '当前模式') + '要求开始/结束日期为同一天）';
   }
+  if (errorText.includes('all records must use the same date')) {
+    return '上传失败: 日期范围错误（' + (uploadMode || '当前模式') + '只允许单日数据）';
+  }
   if (errorText.includes('Invalid date range')) {
     return '上传失败: 日期选择错误';
   }

@@ -300,7 +300,7 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Project and buyer are required' });
   }
 
-  if (isRefluxMode) {
+  {
     const invalidRecord = data.find((record) => {
       const range = extractDateRange(record);
       const start = range.date_start || '';
@@ -311,8 +311,24 @@ module.exports = async function handler(req, res) {
     if (invalidRecord) {
       const range = extractDateRange(invalidRecord);
       return res.status(400).json({
-        error: 'Invalid date range for reflux mode: date_start and date_stop must be the same date',
+        error: 'Invalid date range: date_start and date_stop must be the same date',
+        upload_mode: normalizedUploadMode,
         actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
+      });
+    }
+    const uniqueDates = new Set(
+      data
+        .map((record) => {
+          const range = extractDateRange(record);
+          return range.date_start || '';
+        })
+        .filter(Boolean)
+    );
+    if (uniqueDates.size > 1) {
+      return res.status(400).json({
+        error: 'Invalid date range: all records must use the same date',
+        upload_mode: normalizedUploadMode,
+        actual_dates: Array.from(uniqueDates).slice(0, 10)
       });
     }
   }
