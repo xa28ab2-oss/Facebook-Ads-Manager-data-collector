@@ -102,7 +102,8 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
     await sleep(5000);
     const data = Array.isArray(collectedRecords) ? collectedRecords.slice(0) : [];
     if (!data.length) {
-      setUploadTaskResult('error', '采集失败: 未检测到广告数据');
+      const detail = `抓包${captureCount}次，解析${parsedCount}次，候选${recordCandidateCount}条，保留${recordKeptCount}条`;
+      setUploadTaskResult('error', '采集失败: 未检测到广告数据（' + detail + '）');
       return;
     }
     const missingLabels = collectMissingFieldLabels(data);
