@@ -63,7 +63,17 @@ function collectMissingFieldLabels(records) {
     { label: '覆盖人数', keys: ['reach'] },
     { label: '展示量', keys: ['impressions'] },
     { label: '点击量（全部）', keys: ['clicks'] },
-    { label: '完成注册次数', keys: ['omni_complete_registration', 'complete_registrations', 'complete_registration'] }
+    {
+      label: '完成注册次数',
+      keys: [
+        'omni_complete_registration',
+        'complete_registrations',
+        'complete_registration',
+        'actions:omni_complete_registration',
+        'actions:complete_registrations',
+        'actions:complete_registration'
+      ]
+    }
   ];
   const missing = [];
   for (const field of required) {
@@ -71,8 +81,9 @@ function collectMissingFieldLabels(records) {
     for (const record of records) {
       const raw = record && record.raw_fields ? record.raw_fields : {};
       for (const key of field.keys) {
-        const value = record && record[key] !== undefined ? record[key] : raw[key];
-        if (normalizeValue(value) !== null) {
+        const hasRecordField = record && Object.prototype.hasOwnProperty.call(record, key);
+        const hasRawField = raw && Object.prototype.hasOwnProperty.call(raw, key);
+        if (hasRecordField || hasRawField) {
           found = true;
           break;
         }
@@ -95,7 +106,10 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       return;
     }
     const missingLabels = collectMissingFieldLabels(data);
-    const missingHint = missingLabels.length ? '；缺少字段：' + missingLabels.join('、') : '';
+    if (missingLabels.length) {
+      setUploadTaskResult('error', '上传失败: 缺少字段：' + missingLabels.join('、'));
+      return;
+    }
     const payload = {
       operator: 'unknown',
       project_name: projectName || '',
@@ -128,9 +142,9 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
         ? (resultData.errors[0].error || resultData.errors[0].msg || '')
         : '';
       const detail = firstError ? '，首条错误: ' + firstError : '';
-      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail + missingHint);
+      setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail);
     } else {
-      setUploadTaskResult('success', '上传成功' + (missingHint ? '（' + missingHint.slice(1) + '）' : ''));
+      setUploadTaskResult('success', '上传成功');
     }
   } catch (e) {
     const message = e && e.message ? e.message : String(e);
@@ -445,6 +459,17 @@ function extractFacebookInsightsData(data, adAccountId) {
     for (let i = 0; i < dimensions.length; i++) {
       dimensionIndex[dimensions[i]] = i;
     }
+    let hasMultipleObjectiveSummary = false;
+    if (typeof dimensionIndex.objective === 'number' && Array.isArray(dataset.rows)) {
+      for (const row of dataset.rows) {
+        const dimensionValues = row && row.dimension_values ? row.dimension_values : [];
+        const objectiveRaw = normalizeValue(dimensionValues[dimensionIndex.objective]);
+        if (objectiveRaw && objectiveRaw.toUpperCase() === 'MULTIPLE') {
+          hasMultipleObjectiveSummary = true;
+          break;
+        }
+      }
+    }
 
     for (const row of dataset.rows) {
       const dimensionValues = row.dimension_values || [];
@@ -570,7 +595,13 @@ function extractFacebookInsightsData(data, adAccountId) {
         if (!dateStart && !dateStop) continue;
       }
       const objectiveValue = normalizeValue(objective);
-      if (!objectiveValue || objectiveValue.toUpperCase() !== 'MULTIPLE') continue;
+      if (typeof dimensionIndex.objective === 'number') {
+        if (hasMultipleObjectiveSummary) {
+          if (!objectiveValue || objectiveValue.toUpperCase() !== 'MULTIPLE') continue;
+        } else if (!objectiveValue) {
+          continue;
+        }
+      }
       recordCandidateCount += 1;
 
       const reach = pickAtomicValue(atomicByName, ['reach']);
