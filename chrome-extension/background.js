@@ -31,6 +31,28 @@ function setUploadTaskResult(type, message) {
   };
 }
 
+function parseUploadErrorMessage(responseStatus, responseText) {
+  const text = String(responseText || '').trim();
+  if (!text) {
+    return '上传失败: HTTP ' + responseStatus;
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {}
+  const errorText = parsed && typeof parsed.error === 'string' ? parsed.error : text;
+  const uploadMode = parsed && typeof parsed.upload_mode === 'string' ? parsed.upload_mode : '';
+  if (errorText.includes('date_start and date_stop must be the same date')) {
+    return '上传失败: 日期范围错误（' + (uploadMode || '当前模式') + '要求开始/结束日期为同一天）';
+  }
+  if (errorText.includes('Invalid date range')) {
+    return '上传失败: 日期选择错误';
+  }
+  let detail = text.replace(/\s+/g, ' ').trim();
+  if (detail.length > 180) detail = detail.slice(0, 180) + '...';
+  return '上传失败: HTTP ' + responseStatus + (detail ? '，' + detail : '');
+}
+
 async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
   if (uploadTaskRunning) return;
   uploadTaskRunning = true;
@@ -59,16 +81,7 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       try {
         text = await response.text();
       } catch (e) {}
-      if (text && (text.includes('Invalid date range') || text.includes('"expected"'))) {
-        setUploadTaskResult('error', '上传失败: 日期选择错误');
-      } else {
-        let detail = '';
-        if (text) {
-          detail = text.replace(/\s+/g, ' ').trim();
-          if (detail.length > 180) detail = detail.slice(0, 180) + '...';
-        }
-        setUploadTaskResult('error', '上传失败: HTTP ' + response.status + (detail ? '，' + detail : ''));
-      }
+      setUploadTaskResult('error', parseUploadErrorMessage(response.status, text));
       return;
     }
     let resultData = null;
