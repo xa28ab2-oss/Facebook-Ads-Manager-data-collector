@@ -57,9 +57,19 @@ function parseUploadErrorMessage(responseStatus, responseText) {
 }
 
 function collectMissingFieldLabels(records) {
+  const headerAtomicColumns = new Set(
+    ((lastHeaders && Array.isArray(lastHeaders.atomic_columns)) ? lastHeaders.atomic_columns : [])
+      .map((name) => normalizeFieldName(name))
+      .filter(Boolean)
+  );
+  const headerResultColumns = new Set(
+    ((lastHeaders && Array.isArray(lastHeaders.result_columns)) ? lastHeaders.result_columns : [])
+      .map((name) => normalizeFieldName(name))
+      .filter(Boolean)
+  );
   const required = [
     { label: '消耗', keys: ['spend'] },
-    { label: '成效', keys: ['results'] },
+    { label: '成效', keys: ['results'], headerResultKeys: ['results'] },
     { label: '覆盖人数', keys: ['reach'] },
     { label: '展示量', keys: ['impressions'] },
     { label: '点击量（全部）', keys: ['clicks'] },
@@ -89,6 +99,22 @@ function collectMissingFieldLabels(records) {
         }
       }
       if (found) break;
+    }
+    if (!found && Array.isArray(field.headerAtomicKeys)) {
+      for (const key of field.headerAtomicKeys) {
+        if (headerAtomicColumns.has(normalizeFieldName(key))) {
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found && Array.isArray(field.headerResultKeys)) {
+      for (const key of field.headerResultKeys) {
+        if (headerResultColumns.has(normalizeFieldName(key))) {
+          found = true;
+          break;
+        }
+      }
     }
     if (!found) missing.push(field.label);
   }
@@ -452,7 +478,9 @@ function extractFacebookInsightsData(data, adAccountId) {
     if (!lastHeaders && hasAnyMetricColumn(atomicColumns)) {
       lastHeaders = {
         dimensions: dimensions.slice(0),
-        atomic_columns: atomicColumns.map((c) => (c && c.name) || null).filter(Boolean)
+        atomic_columns: atomicColumns.map((c) => (c && c.name) || null).filter(Boolean),
+        action_columns: actionColumns.map((c) => (c && c.name) || null).filter(Boolean),
+        result_columns: resultColumns.map((c) => (c && c.name) || null).filter(Boolean)
       };
     }
 
