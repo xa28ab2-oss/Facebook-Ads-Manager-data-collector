@@ -45,7 +45,7 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       operator: 'unknown',
       project_name: projectName || '',
       buyer_name: buyerName || '',
-      upload_mode: uploadMode || '日报',
+      upload_mode: uploadMode || '当日消耗',
       timestamp: Math.floor(Date.now() / 60000) * 60000,
       data
     };
@@ -108,6 +108,12 @@ function shouldCapture(url) {
     if (lowerUrl.includes(pattern)) return true;
   }
   return false;
+}
+
+function extractAdAccountIdFromUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const match = url.match(/act_(\d{6,})/i);
+  return match && match[1] ? match[1] : '';
 }
 
 function isAllowedAdsPage(url) {
@@ -367,7 +373,7 @@ function hasAnyMetricColumn(atomicColumns) {
   return false;
 }
 
-function extractFacebookInsightsData(data) {
+function extractFacebookInsightsData(data, adAccountId) {
   const records = [];
   if (!data || !data.data || !Array.isArray(data.data)) return records;
 
@@ -548,6 +554,9 @@ function extractFacebookInsightsData(data) {
       const aggregate = actionAggregateByDateKey.get(dateKey);
       const resultAggregate = resultAggregateByDateKey.get(dateKey);
       const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName, ...resultValueByColumn };
+      if (adAccountId) {
+        rawFields.ad_account_id = adAccountId;
+      }
       if (
         completeRegistrations !== null &&
         !Object.prototype.hasOwnProperty.call(rawFields, 'omni_complete_registration')
@@ -572,7 +581,7 @@ function extractFacebookInsightsData(data) {
   return records;
 }
 
-function extractAdData(data) {
+function extractAdData(data, adAccountId) {
   const records = [];
 
   function processObject(obj) {
@@ -584,7 +593,7 @@ function extractAdData(data) {
     }
 
     if (obj.data && Array.isArray(obj.data) && obj.data.length && obj.data[0] && obj.data[0].headers && obj.data[0].rows) {
-      const fbRecords = extractFacebookInsightsData(obj);
+      const fbRecords = extractFacebookInsightsData(obj, adAccountId);
       for (const r of fbRecords) records.push(r);
       return;
     }
@@ -684,7 +693,10 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
     const status = params && params.response && params.response.status;
     if (!requestId || !url || !shouldCapture(url)) return;
     if (typeof status === 'number' && (status < 200 || status >= 300)) return;
-    pendingResponseByRequestId.set(requestId, url);
+    pendingResponseByRequestId.set(requestId, {
+      url,
+      adAccountId: extractAdAccountIdFromUrl(url)
+    });
     captureCount += 1;
     return;
   }
@@ -692,8 +704,10 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
   if (eventName === 'Network.loadingFinished') {
     const requestId = params && params.requestId;
     if (!requestId) return;
-    const url = pendingResponseByRequestId.get(requestId);
-    if (!url) return;
+    const requestInfo = pendingResponseByRequestId.get(requestId);
+    if (!requestInfo || !requestInfo.url) return;
+    const url = requestInfo.url;
+    const adAccountId = requestInfo.adAccountId || '';
 
     pendingResponseByRequestId.delete(requestId);
 
@@ -708,7 +722,7 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
       const json = JSON.parse(jsonText);
       parsedCount += 1;
       extractCampaignNames(json);
-      const records = extractAdData(json);
+      const records = extractAdData(json, adAccountId);
       if (records.length) upsertRecords(records);
     } catch (e) {
       const message = e && e.message ? e.message : String(e);

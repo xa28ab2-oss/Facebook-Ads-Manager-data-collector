@@ -189,6 +189,7 @@ function buildFieldMapping(fieldsItems) {
     username: pickField(fieldsIndex, ['username', 'user', '用户名', '用户']),
     project_name: pickField(fieldsIndex, ['project_name', 'project', '项目名称', '项目']),
     buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
+    ad_account_id: pickField(fieldsIndex, ['ad_account_id', 'account_id', '广告账户编号', '广告账户id', '广告账户ID']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
     date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期']),
@@ -224,6 +225,7 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
   setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
   setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
   setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
+  setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || '', 'text');
   setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
   setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
@@ -273,8 +275,9 @@ module.exports = async function handler(req, res) {
   }
 
   const { operator, username, project_name, buyer_name, upload_mode, timestamp, data } = req.body || {};
-  const normalizedUploadMode = upload_mode === '回流' ? '回流' : '日报';
-  const targetTableId = normalizedUploadMode === '回流' ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
+  const isRefluxMode = upload_mode === '回流' || upload_mode === '回流消耗';
+  const normalizedUploadMode = isRefluxMode ? '回流消耗' : '当日消耗';
+  const targetTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -289,7 +292,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (ENFORCE_DATE_VALIDATION) {
-    if (normalizedUploadMode === '回流') {
+    if (isRefluxMode) {
       const today = getTodayDateString();
       const yesterday = getYesterdayDateString();
       const invalidRecord = data.find((record) => {

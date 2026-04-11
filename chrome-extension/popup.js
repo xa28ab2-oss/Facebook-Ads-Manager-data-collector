@@ -215,7 +215,7 @@
     chrome.storage.local.get(['projectName', 'buyerName', 'uploadMode', 'uiState', 'optionsCache'], function(result) {
       const savedProject = result.projectName || '';
       const savedBuyer = result.buyerName || '';
-      const savedUploadMode = result.uploadMode || '日报';
+      const savedUploadMode = result.uploadMode || '当日消耗';
       if (savedProject) projectNameInput.value = savedProject;
       if (savedBuyer) buyerNameInput.value = savedBuyer;
       if (uploadModeInput) uploadModeInput.value = savedUploadMode;
@@ -264,7 +264,7 @@
     chrome.storage.local.set({
       projectName: projectNameInput.value,
       buyerName: buyerNameInput.value,
-      uploadMode: uploadModeInput ? uploadModeInput.value : '日报'
+      uploadMode: uploadModeInput ? uploadModeInput.value : '当日消耗'
     });
   }
 
@@ -358,7 +358,7 @@
   collectBtn.addEventListener('click', async function() {
     const projectName = projectNameInput.value.trim();
     const buyerName = buyerNameInput.value.trim();
-    const uploadMode = uploadModeInput ? String(uploadModeInput.value || '日报').trim() : '日报';
+    const uploadMode = uploadModeInput ? String(uploadModeInput.value || '当日消耗').trim() : '当日消耗';
     if (!validateSelections(projectName, buyerName)) return;
 
     saveSettings();
@@ -410,7 +410,7 @@
           action: 'finalizeCollectionUpload',
           project_name: projectName || '',
           buyer_name: buyerName || '',
-          upload_mode: uploadMode || '日报',
+          upload_mode: uploadMode || '当日消耗',
           api_endpoint: apiEndpoint
         });
         if (!triggerResp || !triggerResp.success) {
