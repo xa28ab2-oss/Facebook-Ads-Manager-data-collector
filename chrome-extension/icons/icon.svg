@@ -11,11 +11,11 @@
   <!-- Table/Data Icon -->
   <rect x="24" y="24" width="80" height="80" rx="8" fill="white" fill-opacity="0.2" />
   
-  <!-- Chart Bars -->
-  <rect x="36" y="65" width="12" height="25" rx="2" fill="white" />
-  <rect x="54" y="45" width="12" height="45" rx="2" fill="white" />
-  <rect x="72" y="55" width="12" height="35" rx="2" fill="white" />
-  <rect x="90" y="35" width="12" height="55" rx="2" fill="white" />
+  <!-- Colorful Chart Bars -->
+  <rect x="36" y="65" width="12" height="25" rx="2" fill="#FFB703" /> <!-- Amber -->
+  <rect x="54" y="45" width="12" height="45" rx="2" fill="#FB8500" /> <!-- Orange -->
+  <rect x="72" y="55" width="12" height="35" rx="2" fill="#219EBC" /> <!-- Blue Green -->
+  <rect x="90" y="35" width="12" height="55" rx="2" fill="#8ECAE6" /> <!-- Light Blue -->
 
   <!-- Sync Symbol (Bottom Right) -->
   <circle cx="100" cy="100" r="22" fill="#34A853" stroke="white" stroke-width="4" />
