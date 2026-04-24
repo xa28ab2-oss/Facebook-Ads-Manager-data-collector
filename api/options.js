@@ -11,6 +11,11 @@ function normalizeFieldName(name) {
     .trim();
 }
 
+function shouldIgnoreOptionField(fieldName) {
+  const normalized = normalizeFieldName(fieldName);
+  return normalized === normalizeFieldName('序号') || normalized === 'serialno';
+}
+
 function extractStringValues(value) {
   if (value === null || value === undefined) return [];
   if (Array.isArray(value)) {
@@ -132,6 +137,7 @@ module.exports = async function handler(req, res) {
       for (const item of items) {
         const fields = item && item.fields ? item.fields : {};
         for (const key of Object.keys(fields)) {
+          if (shouldIgnoreOptionField(key)) continue;
           const values = extractStringValues(fields[key]);
           for (const project of values) {
             if (project) projects.add(project);
@@ -145,6 +151,8 @@ module.exports = async function handler(req, res) {
     const fieldResp = await listBitableFields(tenantAccessToken, LARK_PROJECT_TABLE_ID);
     const fieldItems = fieldResp && fieldResp.data && Array.isArray(fieldResp.data.items) ? fieldResp.data.items : [];
     for (const field of fieldItems) {
+      const fieldName = field && (field.field_name || field.fieldName || field.name);
+      if (shouldIgnoreOptionField(fieldName)) continue;
       const property = field && field.property ? field.property : {};
       const options = Array.isArray(property.options) ? property.options : [];
       for (const option of options) {
