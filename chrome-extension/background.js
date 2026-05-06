@@ -79,18 +79,7 @@ function collectMissingFieldLabels(records) {
     { label: '成效', keys: ['results'], headerResultKeys: ['results'] },
     { label: '覆盖人数', keys: ['reach'] },
     { label: '展示量', keys: ['impressions'] },
-    { label: '点击量（全部）', keys: ['clicks'] },
-    {
-      label: '完成注册次数',
-      keys: [
-        'omni_complete_registration',
-        'complete_registrations',
-        'complete_registration',
-        'actions:omni_complete_registration',
-        'actions:complete_registrations',
-        'actions:complete_registration'
-      ]
-    }
+    { label: '点击量（全部）', keys: ['clicks'] }
   ];
   const missing = [];
   for (const field of required) {

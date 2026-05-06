@@ -95,9 +95,9 @@ Facebook_data_Chrome_Extension/
 - 覆盖人数：`reach`
 - 展示量：`impressions`
 - 点击量（全部）：`clicks`
-- 完成注册次数：`omni_complete_registration` / `complete_registrations` / `complete_registration` / `actions:omni_complete_registration`
+- 完成注册次数：`omni_complete_registration` / `complete_registrations` / `complete_registration` / `actions:omni_complete_registration`（非强制要求）
 
-缺任一字段会直接拦截上传并在前端提示。
+缺任一强制字段（消耗、成效、覆盖人数、展示量、点击量）会直接拦截上传并在前端提示。
 
 ## 七、隐私与安全
 

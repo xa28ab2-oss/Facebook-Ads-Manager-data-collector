@@ -85,22 +85,29 @@ function setBitableFieldValue(fields, fieldInfo, value, kind) {
   fields[fieldInfo.fieldName] = value == null ? '' : String(value);
 }
 
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function getBeijingNowShiftedDate() {
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  return new Date(utcMs + BEIJING_OFFSET_MS);
+}
+
 function formatDate(value) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(value.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function getYesterdayDateString() {
-  const now = new Date();
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  return formatDate(yesterday);
+  const beijingNow = getBeijingNowShiftedDate();
+  beijingNow.setUTCDate(beijingNow.getUTCDate() - 1);
+  return formatDate(beijingNow);
 }
 
 function getTodayDateString() {
-  const now = new Date();
-  return formatDate(now);
+  return formatDate(getBeijingNowShiftedDate());
 }
 
 function extractDateRange(record) {
