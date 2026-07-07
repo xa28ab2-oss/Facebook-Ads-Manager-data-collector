@@ -4,6 +4,7 @@ const LARK_APP_TOKEN = process.env.LARK_APP_TOKEN || '';
 const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_TABLE_ID = process.env.LARK_TABLE_ID || '';
+const LARK_TABLE_ID_EXTRA = process.env.LARK_TABLE_ID_EXTRA || '';
 const LARK_REFLUX_TABLE_ID = process.env.LARK_REFLUX_TABLE_ID || '';
 const API_TOKEN = process.env.API_TOKEN || '';
 const ENFORCE_DATE_VALIDATION = true;
@@ -277,6 +278,99 @@ async function addRecordToBitable(tenantAccessToken, fieldsPayload, tableId) {
   return await response.json();
 }
 
+async function uploadToTable(tenantAccessToken, tableId, commonPayload, data) {
+  const fieldsResp = await listBitableFields(tenantAccessToken, tableId);
+  if (fieldsResp && typeof fieldsResp.code === 'number' && fieldsResp.code !== 0) {
+    return {
+      table_id: tableId,
+      uploaded: 0,
+      failed: data.length,
+      errors: [{
+        code: fieldsResp.code,
+        error: fieldsResp.msg || 'Failed to list bitable fields',
+        table_id: tableId
+      }]
+    };
+  }
+  const fieldsItems = (fieldsResp && fieldsResp.data && Array.isArray(fieldsResp.data.items)) ? fieldsResp.data.items : [];
+  if (!fieldsItems.length) {
+    return {
+      table_id: tableId,
+      uploaded: 0,
+      failed: data.length,
+      errors: [{
+        code: 1254046,
+        error: 'No fields found in target table',
+        table_id: tableId
+      }]
+    };
+  }
+  const fieldMapping = buildFieldMapping(fieldsItems);
+
+  const results = [];
+  const errors = [];
+
+  for (const record of data) {
+    try {
+      const fieldsPayload = buildFieldsPayload(
+        {
+          ...record,
+          ...commonPayload
+        },
+        fieldMapping,
+        fieldsItems
+      );
+
+      if (!fieldsPayload || Object.keys(fieldsPayload).length === 0) {
+        const availableFields = fieldsItems.map((f) => f.field_name).filter(Boolean);
+        errors.push({
+          campaign_name: record.campaign_name,
+          code: 1254045,
+          error: 'FieldNameNotFound: no matched columns in target table',
+          table_id: tableId,
+          available_fields: availableFields
+        });
+        continue;
+      }
+
+      const result = await addRecordToBitable(tenantAccessToken, fieldsPayload, tableId);
+
+      if (result.code && result.code !== 0) {
+        errors.push({
+          campaign_name: record.campaign_name,
+          code: result.code,
+          error: result.msg,
+          table_id: tableId
+        });
+      } else {
+        results.push(result);
+      }
+    } catch (err) {
+      errors.push({
+        campaign_name: record.campaign_name,
+        code: -1,
+        error: err.message,
+        table_id: tableId
+      });
+    }
+  }
+
+  return {
+    table_id: tableId,
+    uploaded: results.length,
+    failed: errors.length,
+    errors: errors.length > 0 ? errors : undefined,
+    meta: {
+      available_fields: fieldsItems.map((f) => f.field_name),
+      mapped_fields: Object.fromEntries(
+        Object.entries(fieldMapping)
+          .filter(([, v]) => v && v.fieldName)
+          .map(([k, v]) => [k, v.fieldName])
+      )
+    }
+  };
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -293,7 +387,10 @@ module.exports = async function handler(req, res) {
   const { operator, username, project_name, buyer_name, upload_mode, timestamp, data } = req.body;
   const isRefluxMode = upload_mode === '回流' || upload_mode === '回流消耗';
   const normalizedUploadMode = isRefluxMode ? '回流消耗' : '当日消耗';
-  const targetTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
+  const mainTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
+  const tableCandidates = isRefluxMode ? [mainTableId] : [mainTableId, LARK_TABLE_ID_EXTRA];
+  const tableIdSet = new Set(tableCandidates.filter(Boolean));
+  const tableIds = Array.from(tableIdSet);
 
   if (!data || !Array.isArray(data)) {
     return res.status(400).json({ error: 'Invalid data format: expected { data: [...] }' });
@@ -376,7 +473,7 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !targetTableId) {
+  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !mainTableId) {
     return res.status(500).json({ error: 'Lark API configuration missing' });
   }
 
@@ -387,87 +484,42 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to get tenant access token' });
     }
 
-    const fieldsResp = await listBitableFields(tenantAccessToken, targetTableId);
-    if (fieldsResp && typeof fieldsResp.code === 'number' && fieldsResp.code !== 0) {
-      return res.status(500).json({
-        error: 'Failed to list bitable fields',
-        table_id: targetTableId,
-        code: fieldsResp.code,
-        msg: fieldsResp.msg || 'unknown'
-      });
-    }
-    const fieldsItems = (fieldsResp && fieldsResp.data && Array.isArray(fieldsResp.data.items)) ? fieldsResp.data.items : [];
-    if (!fieldsItems.length) {
-      return res.status(500).json({
-        error: 'No fields found in target table',
-        table_id: targetTableId
-      });
-    }
-    const fieldMapping = buildFieldMapping(fieldsItems);
+    const commonPayload = {
+      operator: operator,
+      username: username || operator,
+      project_name: project_name,
+      buyer_name: buyer_name,
+      upload_mode: normalizedUploadMode,
+      timestamp: timestamp
+    };
+    const perTableResults = [];
+    const mergedErrors = [];
+    let totalUploaded = 0;
+    let totalFailed = 0;
 
-    const results = [];
-    const errors = [];
-
-    for (const record of data) {
-      try {
-        const fieldsPayload = buildFieldsPayload(
-          {
-            ...record,
-            operator: operator,
-            username: username || operator,
-            project_name: project_name,
-            buyer_name: buyer_name,
-            upload_mode: normalizedUploadMode,
-            timestamp: timestamp
-          },
-          fieldMapping,
-          fieldsItems
-        );
-
-        if (!fieldsPayload || Object.keys(fieldsPayload).length === 0) {
-          const availableFields = fieldsItems.map((f) => f.field_name).filter(Boolean);
-          errors.push({
-            campaign_name: record.campaign_name,
-            code: 1254045,
-            error: 'FieldNameNotFound: no matched columns in target table',
-            table_id: targetTableId,
-            available_fields: availableFields
-          });
-          continue;
-        }
-
-        const result = await addRecordToBitable(tenantAccessToken, fieldsPayload, targetTableId);
-
-        if (result.code && result.code !== 0) {
-          errors.push({
-            campaign_name: record.campaign_name,
-            code: result.code,
-            error: result.msg
-          });
-        } else {
-          results.push(result);
-        }
-      } catch (err) {
-        errors.push({
-          campaign_name: record.campaign_name,
-          code: -1,
-          error: err.message
-        });
+    for (const tableId of tableIds) {
+      const tableResult = await uploadToTable(tenantAccessToken, tableId, commonPayload, data);
+      perTableResults.push(tableResult);
+      totalUploaded += tableResult.uploaded || 0;
+      totalFailed += tableResult.failed || 0;
+      if (Array.isArray(tableResult.errors)) {
+        mergedErrors.push(...tableResult.errors);
       }
     }
 
+    const firstMeta = perTableResults.length ? perTableResults[0].meta : null;
     return res.status(200).json({
       success: true,
-      uploaded: results.length,
-      failed: errors.length,
-      errors: errors.length > 0 ? errors : undefined,
+      uploaded: totalUploaded,
+      failed: totalFailed,
+      errors: mergedErrors.length > 0 ? mergedErrors : undefined,
       meta: {
-        available_fields: fieldsItems.map((f) => f.field_name),
-        mapped_fields: Object.fromEntries(
-          Object.entries(fieldMapping)
-            .filter(([, v]) => v && v.fieldName)
-            .map(([k, v]) => [k, v.fieldName])
-        )
+        tables: perTableResults.map((r) => ({
+          table_id: r.table_id,
+          uploaded: r.uploaded,
+          failed: r.failed
+        })),
+        ...(firstMeta || {})
       }
     });
 

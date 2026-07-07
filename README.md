@@ -45,6 +45,7 @@ Facebook_data_Chrome_Extension/
 | `LARK_APP_ID` | Lark 应用 App ID |
 | `LARK_APP_SECRET` | Lark 应用 App Secret |
 | `LARK_TABLE_ID` | 当日消耗表 Table ID |
+| `LARK_TABLE_ID_EXTRA` | 当日消耗额外同步表 Table ID（可选，用于双写） |
 | `LARK_REFLUX_TABLE_ID` | 回流消耗表 Table ID |
 | `LARK_BUYER_TABLE_ID` | 投手表 Table ID |
 | `LARK_PROJECT_TABLE_ID` | 项目表 Table ID |
