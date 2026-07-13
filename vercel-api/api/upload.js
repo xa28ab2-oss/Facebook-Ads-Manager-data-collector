@@ -388,7 +388,7 @@ module.exports = async function handler(req, res) {
   const isRefluxMode = upload_mode === '回流' || upload_mode === '回流消耗';
   const normalizedUploadMode = isRefluxMode ? '回流消耗' : '当日消耗';
   const mainTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
-  const tableCandidates = isRefluxMode ? [mainTableId] : [mainTableId, LARK_TABLE_ID_EXTRA];
+  const tableCandidates = [mainTableId, LARK_TABLE_ID_EXTRA];
   const tableIdSet = new Set(tableCandidates.filter(Boolean));
   const tableIds = Array.from(tableIdSet);
 
