@@ -178,6 +178,13 @@ async function listBitableFields(tenantAccessToken, tableId) {
   return await response.json();
 }
 
+function isTableNotFoundError(error) {
+  const message = String(
+    (error && (error.error || error.msg || error.message || error.code)) || ''
+  ).toLowerCase();
+  return message.includes('tableidnotfound');
+}
+
 function buildFieldMapping(fieldsItems) {
   const fieldsIndex = buildFieldNameIndex(fieldsItems);
 
@@ -285,11 +292,13 @@ async function addRecordToBitable(tenantAccessToken, fieldsPayload, tableId) {
 async function uploadToTable(tenantAccessToken, tableId, commonPayload, data, allowedKeys) {
   const fieldsResp = await listBitableFields(tenantAccessToken, tableId);
   if (fieldsResp && typeof fieldsResp.code === 'number' && fieldsResp.code !== 0) {
+    const skipped = isTableNotFoundError(fieldsResp);
     return {
       table_id: tableId,
       uploaded: 0,
-      failed: data.length,
-      errors: [{
+      failed: skipped ? 0 : data.length,
+      skipped,
+      errors: skipped ? undefined : [{
         code: fieldsResp.code,
         error: fieldsResp.msg || 'Failed to list bitable fields',
         table_id: tableId
@@ -341,6 +350,22 @@ async function uploadToTable(tenantAccessToken, tableId, commonPayload, data, al
       const result = await addRecordToBitable(tenantAccessToken, fieldsPayload, tableId);
 
       if (result.code && result.code !== 0) {
+        if (isTableNotFoundError(result)) {
+          return {
+            table_id: tableId,
+            uploaded: results.length,
+            failed: 0,
+            skipped: true,
+            meta: {
+              available_fields: fieldsItems.map((f) => f.field_name),
+              mapped_fields: Object.fromEntries(
+                Object.entries(fieldMapping)
+                  .filter(([, v]) => v && v.fieldName)
+                  .map(([k, v]) => [k, v.fieldName])
+              )
+            }
+          };
+        }
         errors.push({
           campaign_name: record.campaign_name,
           code: result.code,
