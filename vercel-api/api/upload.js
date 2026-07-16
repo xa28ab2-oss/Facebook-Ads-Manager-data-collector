@@ -211,7 +211,7 @@ function buildFieldMapping(fieldsItems) {
   return mapping;
 }
 
-function buildFieldsPayload(record, mapping, fieldsItems) {
+function buildFieldsPayload(record, mapping, fieldsItems, allowedKeys) {
   const fields = {};
   const raw = record && record.raw_fields ? record.raw_fields : {};
   const spendValue = record.spend !== undefined && record.spend !== null ? record.spend : raw.spend;
@@ -221,37 +221,43 @@ function buildFieldsPayload(record, mapping, fieldsItems) {
     ? record.unique_link_clicks
     : raw.unique_link_clicks;
 
-  setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
-  setBitableFieldValue(fields, mapping.budget, record.budget, 'number');
-  setBitableFieldValue(fields, mapping.spend, spendValue, 'number');
-  setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
-  setBitableFieldValue(fields, mapping.clicks, clicksValue, 'number');
-  setBitableFieldValue(fields, mapping.ctr, ctrValue, 'number');
-  setBitableFieldValue(fields, mapping.unique_link_clicks, uniqueLinkClicksValue, 'number');
-  setBitableFieldValue(fields, mapping.results, record.results, 'number');
-  setBitableFieldValue(fields, mapping.cost_per_result, record.cost_per_result, 'number');
-  setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
-  setBitableFieldValue(
-    fields,
-    mapping.omni_complete_registration,
-    record.omni_complete_registration,
-    'number'
-  );
-  setBitableFieldValue(fields, mapping.upload_mode, record.upload_mode || '', 'text');
-  setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
-  setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
-  setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
-  setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
-  setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || raw.ad_account_id || '', 'text');
-  setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
-  setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
-  setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
-  setBitableFieldValue(fields, mapping.data_start, record.date_start || '', 'datetime');
-  setBitableFieldValue(fields, mapping.data_stop, record.date_stop || '', 'datetime');
+  const allow = (key) => !allowedKeys || allowedKeys.has(normalizeFieldName(key));
+
+  if (allow('campaign_name')) setBitableFieldValue(fields, mapping.campaign_name, record.campaign_name || '', 'text');
+  if (allow('budget')) setBitableFieldValue(fields, mapping.budget, record.budget, 'number');
+  if (allow('spend')) setBitableFieldValue(fields, mapping.spend, spendValue, 'number');
+  if (allow('impressions')) setBitableFieldValue(fields, mapping.impressions, record.impressions, 'number');
+  if (allow('clicks')) setBitableFieldValue(fields, mapping.clicks, clicksValue, 'number');
+  if (allow('ctr')) setBitableFieldValue(fields, mapping.ctr, ctrValue, 'number');
+  if (allow('unique_link_clicks')) {
+    setBitableFieldValue(fields, mapping.unique_link_clicks, uniqueLinkClicksValue, 'number');
+  }
+  if (allow('results')) setBitableFieldValue(fields, mapping.results, record.results, 'number');
+  if (allow('cost_per_result')) setBitableFieldValue(fields, mapping.cost_per_result, record.cost_per_result, 'number');
+  if (allow('complete_registrations')) {
+    setBitableFieldValue(fields, mapping.complete_registrations, record.complete_registrations, 'number');
+  }
+  if (allow('omni_complete_registration')) {
+    setBitableFieldValue(fields, mapping.omni_complete_registration, record.omni_complete_registration, 'number');
+  }
+  if (allow('upload_mode')) setBitableFieldValue(fields, mapping.upload_mode, record.upload_mode || '', 'text');
+  if (allow('operator')) setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
+  if (allow('username')) setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
+  if (allow('project_name')) setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
+  if (allow('buyer_name')) setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
+  if (allow('ad_account_id')) {
+    setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || raw.ad_account_id || '', 'text');
+  }
+  if (allow('timestamp')) setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
+  if (allow('date_start')) setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
+  if (allow('date_stop')) setBitableFieldValue(fields, mapping.date_stop, record.date_stop || '', 'datetime');
+  if (allow('data_start')) setBitableFieldValue(fields, mapping.data_start, record.date_start || '', 'datetime');
+  if (allow('data_stop')) setBitableFieldValue(fields, mapping.data_stop, record.date_stop || '', 'datetime');
 
   const fieldsIndex = buildFieldNameIndex(fieldsItems || []);
   const sourceMap = buildSourceValueMap(record);
   for (const [normKey, value] of sourceMap.entries()) {
+    if (allowedKeys && !allowedKeys.has(normKey)) continue;
     const fieldInfo = fieldsIndex.get(normKey);
     if (!fieldInfo || fields[fieldInfo.fieldName] !== undefined) continue;
     const kind = guessKind(value);
@@ -278,7 +284,7 @@ async function addRecordToBitable(tenantAccessToken, fieldsPayload, tableId) {
   return await response.json();
 }
 
-async function uploadToTable(tenantAccessToken, tableId, commonPayload, data) {
+async function uploadToTable(tenantAccessToken, tableId, commonPayload, data, allowedKeys) {
   const fieldsResp = await listBitableFields(tenantAccessToken, tableId);
   if (fieldsResp && typeof fieldsResp.code === 'number' && fieldsResp.code !== 0) {
     return {
@@ -318,7 +324,8 @@ async function uploadToTable(tenantAccessToken, tableId, commonPayload, data) {
           ...commonPayload
         },
         fieldMapping,
-        fieldsItems
+        fieldsItems,
+        allowedKeys
       );
 
       if (!fieldsPayload || Object.keys(fieldsPayload).length === 0) {
@@ -494,13 +501,27 @@ module.exports = async function handler(req, res) {
       upload_mode: normalizedUploadMode,
       timestamp: timestamp
     };
+    const allowedKeys = isRefluxMode
+      ? new Set([
+          normalizeFieldName('spend'),
+          normalizeFieldName('project_name'),
+          normalizeFieldName('buyer_name'),
+          normalizeFieldName('ad_account_id'),
+          normalizeFieldName('upload_mode'),
+          normalizeFieldName('timestamp'),
+          normalizeFieldName('date_start'),
+          normalizeFieldName('date_stop'),
+          normalizeFieldName('data_start'),
+          normalizeFieldName('data_stop')
+        ])
+      : null;
     const perTableResults = [];
     const mergedErrors = [];
     let totalUploaded = 0;
     let totalFailed = 0;
 
     for (const tableId of tableIds) {
-      const tableResult = await uploadToTable(tenantAccessToken, tableId, commonPayload, data);
+      const tableResult = await uploadToTable(tenantAccessToken, tableId, commonPayload, data, allowedKeys);
       perTableResults.push(tableResult);
       totalUploaded += tableResult.uploaded || 0;
       totalFailed += tableResult.failed || 0;
