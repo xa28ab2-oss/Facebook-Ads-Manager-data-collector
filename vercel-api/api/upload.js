@@ -182,9 +182,14 @@ async function listBitableFields(tenantAccessToken, tableId) {
 
 function isTableNotFoundError(error) {
   const message = String(
-    (error && (error.error || error.msg || error.message || error.code)) || ''
+    (error && (error.error || error.msg || error.message || error.code || JSON.stringify(error))) || ''
   ).toLowerCase();
-  return message.includes('tableidnotfound');
+  return (
+    message.includes('tableidnotfound') ||
+    message.includes('table id not found') ||
+    message.includes('table_not_found') ||
+    (message.includes('table') && message.includes('not found'))
+  );
 }
 
 function buildFieldMapping(fieldsItems) {
@@ -421,7 +426,7 @@ module.exports = async function handler(req, res) {
   const normalizedUploadMode = isRefluxMode ? '回流消耗' : '当日消耗';
   const mainTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
   const tableCandidates = isRefluxMode
-    ? [LARK_REFLUX_TABLE_ID, LARK_TABLE_ID, LARK_TABLE_ID_EXTRA]
+    ? [LARK_REFLUX_TABLE_ID, LARK_TABLE_ID_EXTRA]
     : [LARK_TABLE_ID, LARK_TABLE_ID_EXTRA];
   const tableIdSet = new Set(tableCandidates.filter(Boolean));
   const tableIds = Array.from(tableIdSet);
