@@ -212,6 +212,7 @@ function buildFieldMapping(fieldsItems) {
     username: pickField(fieldsIndex, ['username', 'user', '用户名', '用户']),
     project_name: pickField(fieldsIndex, ['project_name', 'project', '项目名称', '项目']),
     buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
+    media_name: pickField(fieldsIndex, ['media_name', 'medianame', 'platform', 'source_platform', '媒介名称', '媒介', '广告平台']),
     ad_account_id: pickField(fieldsIndex, ['ad_account_id', 'account_id', '广告账户编号', '广告账户id', '广告账户ID']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
@@ -232,6 +233,8 @@ function buildFieldsPayload(record, mapping, fieldsItems, allowedKeys) {
   const uniqueLinkClicksValue = record.unique_link_clicks !== undefined && record.unique_link_clicks !== null
     ? record.unique_link_clicks
     : raw.unique_link_clicks;
+  const sourcePlatform = record.platform || raw.source_platform || '';
+  const mediaName = sourcePlatform === 'google_ads' ? 'Google' : 'Facebook';
 
   const allow = (key) => !allowedKeys || allowedKeys.has(normalizeFieldName(key));
 
@@ -257,6 +260,7 @@ function buildFieldsPayload(record, mapping, fieldsItems, allowedKeys) {
   if (allow('username')) setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
   if (allow('project_name')) setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
   if (allow('buyer_name')) setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
+  if (allow('media_name')) setBitableFieldValue(fields, mapping.media_name, mediaName, 'text');
   if (allow('ad_account_id')) {
     setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || raw.ad_account_id || '', 'text');
   }
@@ -541,6 +545,7 @@ module.exports = async function handler(req, res) {
           normalizeFieldName('spend'),
           normalizeFieldName('project_name'),
           normalizeFieldName('buyer_name'),
+          normalizeFieldName('media_name'),
           normalizeFieldName('ad_account_id'),
           normalizeFieldName('upload_mode'),
           normalizeFieldName('timestamp'),

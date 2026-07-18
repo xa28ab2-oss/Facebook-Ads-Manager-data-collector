@@ -951,6 +951,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (action === 'previewCollection') {
+    if (currentPlatform !== 'google_ads' || targetTabId == null) {
+      sendResponse({ success: false, error: '仅支持在 Google Ads 报表页面预览' });
+      return true;
+    }
+    Promise.resolve()
+      .then(() => chromeTabsSendMessage(targetTabId, { action: 'collectGoogleAdsData' }))
+      .then((result) => sendResponse(result || { success: false, error: '未读取到数据' }))
+      .catch((e) => sendResponse({ success: false, error: e && e.message ? e.message : String(e) }));
+    return true;
+  }
+
   if (action === 'finalizeCollectionUpload') {
     const projectName = request && request.project_name;
     const buyerName = request && request.buyer_name;
