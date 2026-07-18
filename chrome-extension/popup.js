@@ -1,6 +1,5 @@
 (function() {
   const collectBtn = document.getElementById('collectBtn');
-  const previewBtn = document.getElementById('previewBtn');
   const statusNoteEl = document.getElementById('statusNote');
   const logEl = document.getElementById('log');
   const logListEl = document.getElementById('logList');
@@ -258,6 +257,25 @@
       } else {
         loadOptions(savedProject, savedBuyer);
       }
+      configureUploadModeForActiveTab();
+    });
+  }
+
+  function configureUploadModeForActiveTab() {
+    if (!uploadModeInput) return;
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      const tab = Array.isArray(tabs) ? tabs[0] : null;
+      const isGoogleAds = Boolean(tab && /^https:\/\/ads\.google\.com\/aw\//i.test(tab.url || ''));
+      const refluxOption = Array.from(uploadModeInput.options).find((option) => option.value === '回流');
+      if (refluxOption) {
+        refluxOption.hidden = isGoogleAds;
+        refluxOption.disabled = isGoogleAds;
+      }
+      uploadModeInput.disabled = isGoogleAds;
+      if (isGoogleAds) {
+        uploadModeInput.value = '消耗';
+        saveSettings();
+      }
     });
   }
 
@@ -354,53 +372,6 @@
     }
     updateStatus(defaultCollectText, 'idle', null, false);
     collectBtn.disabled = false;
-  }
-
-  if (previewBtn) {
-    previewBtn.addEventListener('click', async function() {
-      previewBtn.disabled = true;
-      updateStatus('正在读取 Google Ads 报表...', 'collecting');
-      addLog('开始仅采集预览，不会上传数据');
-      try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab || !/^https:\/\/ads\.google\.com\/aw\//i.test(tab.url || '')) {
-          updateStatus('预览失败', 'error', '请在 Google Ads 报表页面使用预览功能');
-          return;
-        }
-        const startResp = await sendToBackground({ action: 'startCollection', tabId: tab.id });
-        if (!startResp || !startResp.success) {
-          updateStatus('预览失败', 'error', '采集启动失败: ' + ((startResp && startResp.error) || 'unknown'));
-          return;
-        }
-
-        let previewResp = await sendToBackground({ action: 'previewCollection' });
-        const missingReceiver = previewResp && String(previewResp.error || '').includes('Receiving end does not exist');
-        if (missingReceiver && await ensureContentScript(tab.id)) {
-          previewResp = await sendToBackground({ action: 'previewCollection' });
-        }
-        if (!previewResp || !previewResp.success || !Array.isArray(previewResp.data) || !previewResp.data.length) {
-          updateStatus('预览失败', 'error', '预览失败: ' + ((previewResp && previewResp.error) || '未读取到数据'));
-          return;
-        }
-
-        const record = previewResp.data[0] || {};
-        const currency = record.currency || '';
-        const summary = [
-          `日期 ${record.date_start || '-'}`,
-          `费用 ${currency}${Number(record.spend || 0).toLocaleString('zh-CN')}`,
-          `展示 ${Number(record.impressions || 0).toLocaleString('zh-CN')}`,
-          `点击 ${Number(record.clicks || 0).toLocaleString('zh-CN')}`,
-          `转化 ${Number(record.results || 0).toLocaleString('zh-CN')}`
-        ].join('；');
-        updateStatus('预览成功', 'success', summary);
-        addLog(summary, 'success');
-      } catch (error) {
-        updateStatus('预览失败', 'error', '预览失败: ' + error.message);
-      } finally {
-        await sendToBackground({ action: 'stopCollection' });
-        previewBtn.disabled = false;
-      }
-    });
   }
 
   collectBtn.addEventListener('click', async function() {

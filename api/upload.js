@@ -449,6 +449,9 @@ module.exports = async function handler(req, res) {
     const raw = record && record.raw_fields ? record.raw_fields : {};
     return record && (record.platform === 'google_ads' || raw.source_platform === 'google_ads');
   });
+  if (isGoogleAdsBatch && isRefluxMode) {
+    return res.status(400).json({ error: 'Google Ads only supports consumption mode' });
+  }
 
   {
     const invalidRecord = data.find((record) => {
@@ -502,7 +505,7 @@ module.exports = async function handler(req, res) {
           actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
         });
       }
-    } else if (!isGoogleAdsBatch) {
+    } else {
       const expectedDate = getYesterdayDateString();
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);
