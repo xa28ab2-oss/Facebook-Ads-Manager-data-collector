@@ -441,6 +441,11 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Project and buyer are required' });
   }
 
+  const isGoogleAdsBatch = data.every((record) => {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    return record && (record.platform === 'google_ads' || raw.source_platform === 'google_ads');
+  });
+
   {
     const invalidRecord = data.find((record) => {
       const range = extractDateRange(record);
@@ -493,7 +498,7 @@ module.exports = async function handler(req, res) {
           actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
         });
       }
-    } else {
+    } else if (!isGoogleAdsBatch) {
       const expectedDate = getYesterdayDateString();
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);

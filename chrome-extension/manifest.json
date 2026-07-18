@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "广告报表同步助手",
-  "version": "1.0.4",
-  "description": "采集 Facebook Ads Manager 报表并同步到 Lark 多维表格",
+  "version": "1.0.5",
+  "description": "采集 Facebook Ads Manager 与 Google Ads 报表并同步到 Lark 多维表格",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -19,7 +19,8 @@
     "*://*.facebook.com/adsmanager*",
     "*://*.business.facebook.com/adsmanager*",
     "*://*.adsmanager.facebook.com/*",
-    "*://*.adsmanager-graph.facebook.com/*"
+    "*://*.adsmanager-graph.facebook.com/*",
+    "https://ads.google.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -34,7 +35,8 @@
       "matches": [
         "*://*.facebook.com/adsmanager*",
         "*://*.business.facebook.com/adsmanager*",
-        "*://*.adsmanager.facebook.com/*"
+        "*://*.adsmanager.facebook.com/*",
+        "https://ads.google.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"

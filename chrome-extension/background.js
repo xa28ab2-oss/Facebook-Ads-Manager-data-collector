@@ -18,6 +18,7 @@ let actionAggregateByDateKey = new Map();
 let resultAggregateByDateKey = new Map();
 let uploadTaskRunning = false;
 let lastUploadTaskResult = null;
+let currentPlatform = 'facebook_ads';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,7 +75,13 @@ function collectMissingFieldLabels(records) {
       .map((name) => normalizeMetricKey(name))
       .filter(Boolean)
   );
-  const required = [
+  const isGoogleAds = currentPlatform === 'google_ads' || records.some((record) => record && record.platform === 'google_ads');
+  const required = isGoogleAds ? [
+    { label: '消耗', keys: ['spend'] },
+    { label: '展示次数', keys: ['impressions'] },
+    { label: '点击次数', keys: ['clicks'] },
+    { label: '转化次数', keys: ['results', 'conversions'] }
+  ] : [
     { label: '消耗', keys: ['spend'] },
     { label: '成效', keys: ['results'], headerResultKeys: ['results'] },
     { label: '覆盖人数', keys: ['reach'] },
@@ -122,6 +129,17 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
   uploadTaskRunning = true;
   try {
     await sleep(5000);
+    if (currentPlatform === 'google_ads' && targetTabId != null) {
+      const googleResult = await chromeTabsSendMessage(targetTabId, { action: 'collectGoogleAdsData' });
+      if (!googleResult || !googleResult.success) {
+        setUploadTaskResult('error', '采集失败: ' + ((googleResult && googleResult.error) || '无法读取 Google Ads 报表'));
+        return;
+      }
+      collectedRecords = Array.isArray(googleResult.data) ? googleResult.data : [];
+      lastHeaders = googleResult.meta || null;
+      recordCandidateCount = collectedRecords.length;
+      recordKeptCount = collectedRecords.length;
+    }
     const data = Array.isArray(collectedRecords) ? collectedRecords.slice(0) : [];
     if (!data.length) {
       const detail = `抓包${captureCount}次，解析${parsedCount}次，候选${recordCandidateCount}条，保留${recordKeptCount}条`;
@@ -209,6 +227,7 @@ function isAllowedAdsPage(url) {
   }
   const host = (u.hostname || '').toLowerCase();
   const path = (u.pathname || '').toLowerCase();
+  if (host === 'ads.google.com' && path.startsWith('/aw/')) return true;
   if (host.endsWith('adsmanager.facebook.com')) return true;
   if (host.endsWith('business.facebook.com') && path.includes('/adsmanager')) return true;
   if (host.endsWith('facebook.com') && path.includes('/adsmanager')) return true;
@@ -756,6 +775,14 @@ async function startCollecting(tabId) {
   uploadTaskRunning = false;
   lastUploadTaskResult = null;
 
+  const activeTab = await chromeTabsGet(tabId);
+  currentPlatform = activeTab && /^https:\/\/ads\.google\.com\/aw\//i.test(activeTab.url || '') ? 'google_ads' : 'facebook_ads';
+  if (currentPlatform === 'google_ads') {
+    isCollecting = true;
+    collectingReady = true;
+    return;
+  }
+
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
   await chromeDebuggerSendCommand(tabId, 'Network.enable');
@@ -771,10 +798,10 @@ async function stopCollecting() {
   pendingResponseByRequestId = new Map();
   collectingReady = false;
 
-  if (!debuggerAttached || targetTabId == null) return;
-
   const tabId = targetTabId;
   targetTabId = null;
+  if (!debuggerAttached || tabId == null) return;
+
   debuggerAttached = false;
 
   try {
@@ -783,6 +810,24 @@ async function stopCollecting() {
   } catch (e) {}
 
   await chromeDebuggerDetach(tabId);
+}
+
+function chromeTabsGet(tabId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      resolve(tab);
+    });
+  });
+}
+
+function chromeTabsSendMessage(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      resolve(response);
+    });
+  });
 }
 
 chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
