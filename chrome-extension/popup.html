@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>广告报表同步助手</title>
+  <title>广告报表同步助手（商务联动测试版）</title>
   <style>
     * {
       margin: 0;
@@ -254,15 +254,20 @@
 <body>
   <div class="header">
     <div class="header-title">
-      <h1>📊 广告报表同步助手</h1>
+      <h1>📊 商务联动测试版 1.0.12</h1>
     </div>
   </div>
 
   <div class="input-group">
     <div class="field-label-row">
-      <label>项目名称</label>
+      <label>项目所属商务</label>
       <button class="icon-btn" id="refreshOptionsBtn" title="刷新下拉选项">↻</button>
     </div>
+    <select id="businessName"></select>
+  </div>
+
+  <div class="input-group">
+    <label>项目名称</label>
     <select id="projectName"></select>
   </div>
 

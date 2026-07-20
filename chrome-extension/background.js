@@ -124,13 +124,47 @@ function collectMissingFieldLabels(records) {
   return missing;
 }
 
+function googleRecordFingerprint(result) {
+  const record = result && Array.isArray(result.data) ? result.data[0] : null;
+  if (!record) return '';
+  return JSON.stringify({
+    account_id: record.ad_account_id || record.account_id || '',
+    date_start: record.date_start || '',
+    date_stop: record.date_stop || '',
+    spend: Number(record.spend || 0),
+    impressions: Number(record.impressions || 0),
+    clicks: Number(record.clicks || 0),
+    results: Number(record.results || 0),
+    currency: record.currency || ''
+  });
+}
+
+async function collectStableGoogleAdsData(tabId) {
+  let lastError = '报表尚未加载完成';
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const first = await chromeTabsSendMessage(tabId, { action: 'collectGoogleAdsData' });
+    if (!first || !first.success || !Array.isArray(first.data) || !first.data.length) {
+      lastError = (first && first.error) || lastError;
+      await sleep(1000);
+      continue;
+    }
+
+    await sleep(1000);
+    const second = await chromeTabsSendMessage(tabId, { action: 'collectGoogleAdsData' });
+    if (second && second.success && googleRecordFingerprint(first) === googleRecordFingerprint(second)) {
+      return second;
+    }
+    lastError = 'Google Ads 报表数据仍在变化';
+  }
+  return { success: false, error: '等待 Google Ads 报表稳定超时：' + lastError };
+}
+
 async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
   if (uploadTaskRunning) return;
   uploadTaskRunning = true;
   try {
-    await sleep(5000);
     if (currentPlatform === 'google_ads' && targetTabId != null) {
-      const googleResult = await chromeTabsSendMessage(targetTabId, { action: 'collectGoogleAdsData' });
+      const googleResult = await collectStableGoogleAdsData(targetTabId);
       if (!googleResult || !googleResult.success) {
         setUploadTaskResult('error', '采集失败: ' + ((googleResult && googleResult.error) || '无法读取 Google Ads 报表'));
         return;
@@ -139,6 +173,8 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       lastHeaders = googleResult.meta || null;
       recordCandidateCount = collectedRecords.length;
       recordKeptCount = collectedRecords.length;
+    } else {
+      await sleep(5000);
     }
     const data = Array.isArray(collectedRecords) ? collectedRecords.slice(0) : [];
     if (!data.length) {

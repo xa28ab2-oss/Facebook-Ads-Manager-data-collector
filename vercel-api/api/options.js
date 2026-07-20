@@ -5,6 +5,26 @@ const LARK_APP_ID = process.env.LARK_APP_ID || '';
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_BUYER_TABLE_ID = process.env.LARK_BUYER_TABLE_ID || process.env.LARK_CONFIG_TABLE_ID || '';
 const LARK_PROJECT_TABLE_ID = process.env.LARK_PROJECT_TABLE_ID || '';
+const LARK_BUSINESS_PROJECT_TABLES = process.env.LARK_BUSINESS_PROJECT_TABLES || '';
+const LARK_BUSINESS_PROJECT_ENABLED = String(process.env.LARK_BUSINESS_PROJECT_ENABLED || '').toLowerCase() === 'true';
+const BUSINESS_LABELS = { tlx: '天狼星', fq: '番茄', ws: '五三' };
+
+function parseBusinessProjectTables() {
+  if (!LARK_BUSINESS_PROJECT_TABLES) return {};
+  try {
+    const parsed = JSON.parse(LARK_BUSINESS_PROJECT_TABLES);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result = {};
+    for (const [code, tableId] of Object.entries(parsed)) {
+      const normalizedCode = String(code || '').trim().toLowerCase();
+      const normalizedTableId = String(tableId || '').trim();
+      if (normalizedCode && normalizedTableId) result[normalizedCode] = normalizedTableId;
+    }
+    return result;
+  } catch (e) {
+    return {};
+  }
+}
 
 function normalizeFieldName(name) {
   return String(name || '')
@@ -92,6 +112,25 @@ async function listBitableFields(tenantAccessToken, tableId) {
   return await response.json();
 }
 
+async function loadBusinessProjects(tenantAccessToken, tableId) {
+  const projects = new Set();
+  let pageToken = '';
+  for (let i = 0; i < 5; i++) {
+    const resp = await listBitableRecords(tenantAccessToken, tableId, pageToken);
+    const items = resp && resp.data && Array.isArray(resp.data.items) ? resp.data.items : [];
+    for (const item of items) {
+      const fields = item && item.fields ? item.fields : {};
+      const values = pickFieldValues(fields, ['项目名称']);
+      for (const project of values) {
+        if (project) projects.add(project);
+      }
+    }
+    pageToken = resp && resp.data ? resp.data.page_token : '';
+    if (!pageToken) break;
+  }
+  return Array.from(projects);
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -165,9 +204,24 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    const businessTables = parseBusinessProjectTables();
+    const testBusinessMode = req.query && String(req.query.business_project_test || '') === '1';
+    const businessProjectEnabled = LARK_BUSINESS_PROJECT_ENABLED || testBusinessMode;
+    const businesses = [];
+    const projectsByBusiness = {};
+    if (businessProjectEnabled) {
+      for (const [code, tableId] of Object.entries(businessTables)) {
+        businesses.push({ value: code, label: BUSINESS_LABELS[code] || code });
+        projectsByBusiness[code] = await loadBusinessProjects(tenantAccessToken, tableId);
+      }
+    }
+
     res.status(200).json({
       projects: Array.from(projects),
-      buyers: Array.from(buyers)
+      buyers: Array.from(buyers),
+      business_project_enabled: businessProjectEnabled,
+      businesses,
+      projects_by_business: projectsByBusiness
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed to load options' });

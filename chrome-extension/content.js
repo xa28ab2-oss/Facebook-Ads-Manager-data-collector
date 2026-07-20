@@ -84,8 +84,10 @@
     return { success: false, error: '未找到 Google Ads 广告系列汇总表，请打开广告系列报表并显示费用、展示次数、点击次数和转化次数列' };
   }
 
-  function findAndClickRefreshButton() {
+  function findRefreshButton() {
     const selectors = [
+      'material-button.icon-refresh[role="button"]',
+      'material-button[role="button"]',
       'div[role="button"]',
       'span[role="button"]',
       'button',
@@ -101,25 +103,49 @@
 
           const label = el.getAttribute('aria-label') || '';
           const text = el.textContent?.trim() || '';
+          const className = typeof el.className === 'string' ? el.className : '';
 
           if (label.includes('刷新') || label.toLowerCase().includes('refresh') ||
-              text.includes('刷新') || text.toLowerCase().includes('refresh')) {
-            console.log('[Facebook Ads Collector] Found refresh button, clicking...');
-            el.click();
-            return true;
+              text.includes('刷新') || text.toLowerCase().includes('refresh') ||
+              className.split(/\s+/).includes('icon-refresh')) {
+            return el;
           }
         }
       } catch (e) {}
     }
 
-    console.log('[Facebook Ads Collector] Refresh button not found');
-    return false;
+    return null;
+  }
+
+  async function clickRefreshButton() {
+    const firstButton = findRefreshButton();
+    if (!firstButton) return { success: false, error: '未找到刷新按钮' };
+    firstButton.click();
+
+    if (location.hostname === 'ads.google.com') {
+      // Google Ads 通常一次刷新即可。仅当第一次刷新后报表仍不可读取时，才补点第二次。
+      for (let i = 0; i < 4; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const firstRefreshResult = collectGoogleAdsData();
+        if (firstRefreshResult && firstRefreshResult.success) {
+          return { success: true, click_count: 1 };
+        }
+      }
+
+      const secondButton = findRefreshButton();
+      if (!secondButton) return { success: false, error: 'Google Ads 第二次刷新按钮未找到' };
+      secondButton.click();
+      return { success: true, click_count: 2, retried: true };
+    }
+
+    return { success: true, click_count: 1 };
   }
 
   chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'clickRefresh') {
-      const clicked = findAndClickRefreshButton();
-      sendResponse({ success: clicked });
+      clickRefreshButton()
+        .then(sendResponse)
+        .catch((error) => sendResponse({ success: false, error: error.message }));
       return true;
     }
     if (request.action === 'collectGoogleAdsData') {

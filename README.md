@@ -49,6 +49,8 @@ Facebook_data_Chrome_Extension/
 | `LARK_REFLUX_TABLE_ID` | 回流消耗表 Table ID |
 | `LARK_BUYER_TABLE_ID` | 投手表 Table ID |
 | `LARK_PROJECT_TABLE_ID` | 项目表 Table ID |
+| `LARK_BUSINESS_PROJECT_TABLES` | 商务代码到项目表 Table ID 的 JSON 映射，例如 `{"tlx":"tbl...","fq":"tbl...","ws":"tbl..."}` |
+| `LARK_BUSINESS_PROJECT_ENABLED` | 商务项目联动开关；审核切换前保持 `false` |
 
 兼容说明：
 - 如果未配置 `LARK_BUYER_TABLE_ID`，会回退使用 `LARK_CONFIG_TABLE_ID` 作为投手表。
