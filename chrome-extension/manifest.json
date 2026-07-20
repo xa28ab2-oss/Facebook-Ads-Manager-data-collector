@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "广告报表同步助手（商务联动测试版）",
-  "version": "1.0.12",
+  "name": "广告报表同步助手",
+  "version": "1.0.6",
   "description": "采集 Facebook Ads Manager 与 Google Ads 报表并同步到 Lark 多维表格",
   "icons": {
     "16": "icons/icon16.png",

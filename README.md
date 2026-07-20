@@ -50,7 +50,7 @@ Facebook_data_Chrome_Extension/
 | `LARK_BUYER_TABLE_ID` | 投手表 Table ID |
 | `LARK_PROJECT_TABLE_ID` | 项目表 Table ID |
 | `LARK_BUSINESS_PROJECT_TABLES` | 商务代码到项目表 Table ID 的 JSON 映射，例如 `{"tlx":"tbl...","fq":"tbl...","ws":"tbl..."}` |
-| `LARK_BUSINESS_PROJECT_ENABLED` | 商务项目联动开关；审核切换前保持 `false` |
+| `LARK_BUSINESS_PROJECT_ENABLED` | 全局商务项目联动开关；新版插件也可通过正式请求参数单独启用，旧版不受影响 |
 
 兼容说明：
 - 如果未配置 `LARK_BUYER_TABLE_ID`，会回退使用 `LARK_CONFIG_TABLE_ID` 作为投手表。

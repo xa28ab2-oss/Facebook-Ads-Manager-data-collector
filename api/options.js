@@ -203,8 +203,11 @@ module.exports = async function handler(req, res) {
     }
 
     const businessTables = parseBusinessProjectTables();
-    const testBusinessMode = req.query && String(req.query.business_project_test || '') === '1';
-    const businessProjectEnabled = LARK_BUSINESS_PROJECT_ENABLED || testBusinessMode;
+    const requestedBusinessMode = req.query && (
+      String(req.query.business_project || '') === '1' ||
+      String(req.query.business_project_test || '') === '1'
+    );
+    const businessProjectEnabled = LARK_BUSINESS_PROJECT_ENABLED || requestedBusinessMode;
     const businesses = [];
     const projectsByBusiness = {};
     if (businessProjectEnabled) {

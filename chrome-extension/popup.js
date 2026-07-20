@@ -132,7 +132,7 @@
   }
 
   function getOptionsEndpoint() {
-    return apiEndpoint.replace(/\/api\/upload\/?$/, '/api/options?business_project_test=1');
+    return apiEndpoint.replace(/\/api\/upload\/?$/, '/api/options?business_project=1');
   }
 
   function validateSelections(projectName, buyerName, businessName) {
