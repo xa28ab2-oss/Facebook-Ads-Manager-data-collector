@@ -507,7 +507,7 @@ module.exports = async function handler(req, res) {
           actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
         });
       }
-    } else {
+    } else if (!isGoogleAdsBatch) {
       const expectedDate = getYesterdayDateString();
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);
