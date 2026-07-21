@@ -113,6 +113,23 @@ function getTodayDateString() {
   return formatDate(getBeijingNowShiftedDate());
 }
 
+function getYesterdayDateStringForOffset(offsetHours) {
+  const offset = Number(offsetHours);
+  if (!Number.isFinite(offset) || offset < -14 || offset > 14) return '';
+  const accountNow = new Date(Date.now() + offset * 60 * 60 * 1000);
+  accountNow.setUTCDate(accountNow.getUTCDate() - 1);
+  return formatDate(accountNow);
+}
+
+function getRecordTimezoneOffset(record) {
+  const raw = record && record.raw_fields ? record.raw_fields : {};
+  const value = record && record.timezone_offset_hours_utc !== undefined
+    ? record.timezone_offset_hours_utc
+    : raw.timezone_offset_hours_utc;
+  const offset = Number(value);
+  return Number.isFinite(offset) && offset >= -14 && offset <= 14 ? offset : null;
+}
+
 function extractDateRange(record) {
   const raw = record && record.raw_fields ? record.raw_fields : {};
   return {
@@ -214,6 +231,7 @@ function buildFieldMapping(fieldsItems) {
     buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
     media_name: pickField(fieldsIndex, ['media_name', 'medianame', 'platform', 'source_platform', '媒介名称', '媒介', '广告平台']),
     ad_account_id: pickField(fieldsIndex, ['ad_account_id', 'account_id', '广告账户编号', '广告账户id', '广告账户ID']),
+    account_timezone: pickField(fieldsIndex, ['account_timezone', 'accounttimezone', '账户时区', '广告账户时区']),
     timestamp: pickField(fieldsIndex, ['timestamp', 'time', '采集时间', '时间', '创建时间']),
     date_start: pickField(fieldsIndex, ['date_start', 'datestart', '开始日期', '起始日期']),
     date_stop: pickField(fieldsIndex, ['date_stop', 'datestop', '结束日期', '截止日期', '终止日期']),
@@ -263,6 +281,9 @@ function buildFieldsPayload(record, mapping, fieldsItems, allowedKeys) {
   if (allow('media_name')) setBitableFieldValue(fields, mapping.media_name, mediaName, 'text');
   if (allow('ad_account_id')) {
     setBitableFieldValue(fields, mapping.ad_account_id, record.ad_account_id || raw.ad_account_id || '', 'text');
+  }
+  if (allow('account_timezone')) {
+    setBitableFieldValue(fields, mapping.account_timezone, record.account_timezone || raw.account_timezone || '', 'text');
   }
   if (allow('timestamp')) setBitableFieldValue(fields, mapping.timestamp, record.timestamp || '', 'datetime');
   if (allow('date_start')) setBitableFieldValue(fields, mapping.date_start, record.date_start || '', 'datetime');
@@ -446,7 +467,6 @@ module.exports = async function handler(req, res) {
   if (!project_name || !buyer_name) {
     return res.status(400).json({ error: 'Project and buyer are required' });
   }
-
   const isGoogleAdsBatch = data.every((record) => {
     const raw = record && record.raw_fields ? record.raw_fields : {};
     return record && (record.platform === 'google_ads' || raw.source_platform === 'google_ads');
@@ -510,16 +530,26 @@ module.exports = async function handler(req, res) {
         });
       }
     } else if (!isFacebookConsumptionTest) {
-      const expectedDate = getYesterdayDateString();
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);
+        const timezoneOffset = isGoogleAdsBatch ? null : getRecordTimezoneOffset(record);
+        // Older released extensions do not send an account timezone. Keep the
+        // Beijing fallback so a server deployment does not interrupt them.
+        const expectedDate = timezoneOffset === null
+          ? getYesterdayDateString()
+          : getYesterdayDateStringForOffset(timezoneOffset);
         return range.date_start !== expectedDate || range.date_stop !== expectedDate;
       });
       if (invalidRecord) {
         const range = extractDateRange(invalidRecord);
+        const timezoneOffset = isGoogleAdsBatch ? null : getRecordTimezoneOffset(invalidRecord);
+        const expectedDate = timezoneOffset === null
+          ? getYesterdayDateString()
+          : getYesterdayDateStringForOffset(timezoneOffset);
         return res.status(400).json({
           error: 'Invalid date range',
           expected: expectedDate,
+          account_timezone: timezoneOffset === null ? null : `GMT${timezoneOffset >= 0 ? '+' : ''}${timezoneOffset}`,
           actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
         });
       }
@@ -552,6 +582,7 @@ module.exports = async function handler(req, res) {
           normalizeFieldName('buyer_name'),
           normalizeFieldName('media_name'),
           normalizeFieldName('ad_account_id'),
+          normalizeFieldName('account_timezone'),
           normalizeFieldName('upload_mode'),
           normalizeFieldName('timestamp'),
           normalizeFieldName('date_start'),
