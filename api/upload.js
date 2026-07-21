@@ -531,9 +531,8 @@ module.exports = async function handler(req, res) {
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);
         const timezoneOffset = isGoogleAdsBatch ? null : getRecordTimezoneOffset(record);
-        // Older released extensions do not send an account timezone. Keep the
-        // Beijing fallback so a server deployment does not interrupt them.
-        const expectedDate = timezoneOffset === null
+        if (!isGoogleAdsBatch && timezoneOffset === null) return true;
+        const expectedDate = isGoogleAdsBatch
           ? getYesterdayDateString()
           : getYesterdayDateStringForOffset(timezoneOffset);
         return range.date_start !== expectedDate || range.date_stop !== expectedDate;
@@ -541,9 +540,9 @@ module.exports = async function handler(req, res) {
       if (invalidRecord) {
         const range = extractDateRange(invalidRecord);
         const timezoneOffset = isGoogleAdsBatch ? null : getRecordTimezoneOffset(invalidRecord);
-        const expectedDate = timezoneOffset === null
+        const expectedDate = isGoogleAdsBatch
           ? getYesterdayDateString()
-          : getYesterdayDateStringForOffset(timezoneOffset);
+          : (timezoneOffset === null ? null : getYesterdayDateStringForOffset(timezoneOffset));
         return res.status(400).json({
           error: 'Invalid date range',
           expected: expectedDate,

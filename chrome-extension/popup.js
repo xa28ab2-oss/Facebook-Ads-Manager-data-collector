@@ -482,7 +482,7 @@
       }
 
       const proceedAfterRefresh = async function() {
-        addLog(isGoogleAds ? '等待 Google Ads 报表刷新并校验数据...' : '等待 5 秒采集数据...');
+        addLog(isGoogleAds ? '等待 Google Ads 报表刷新并校验数据...' : '等待 Facebook Ads 网络报表稳定并校验数据...');
         updateStatus('正在后台上传数据...', 'collecting');
         const triggerResp = await sendToBackground({
           action: 'finalizeCollectionUpload',
@@ -495,7 +495,7 @@
           updateStatus('上传失败', 'error', '上传失败: ' + ((triggerResp && triggerResp.error) || 'unknown'));
           return;
         }
-        await pollUploadTaskResult();
+        await pollUploadTaskResult(50);
       };
 
       const stopAfterRefreshFailure = async function(error) {

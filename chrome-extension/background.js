@@ -19,6 +19,14 @@ let resultAggregateByDateKey = new Map();
 let uploadTaskRunning = false;
 let lastUploadTaskResult = null;
 let currentPlatform = 'facebook_ads';
+const FB_DOM_TEST_MODE = false;
+let expectedFacebookAccountId = '';
+let expectedFacebookBusinessId = '';
+let lastFacebookDataChangeAt = 0;
+let actionContributionByDateKey = new Map();
+let resultContributionByDateKey = new Map();
+let facebookAccessToken = '';
+let facebookAccountTimezone = null;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -124,6 +132,91 @@ function collectMissingFieldLabels(records) {
   return missing;
 }
 
+function extractFacebookAccessToken(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  const patterns = [
+    /(?:^|[?&])access_token=([^&\s]+)/i,
+    /["']access_token["']\s*:\s*["']([^"']+)["']/i,
+    /access_token%22%3A%22([^%&]+)%22/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match || !match[1]) continue;
+    try {
+      return decodeURIComponent(match[1].replace(/\+/g, '%20'));
+    } catch (e) {
+      return match[1];
+    }
+  }
+  return '';
+}
+
+function formatGmtOffset(offset) {
+  const numeric = Number(offset);
+  if (!Number.isFinite(numeric)) return '';
+  const normalized = Object.is(numeric, -0) ? 0 : numeric;
+  return `GMT${normalized >= 0 ? '+' : ''}${normalized}`;
+}
+
+function getYesterdayForGmtOffset(offset) {
+  const numeric = Number(offset);
+  const accountNow = new Date(Date.now() + numeric * 60 * 60 * 1000);
+  accountNow.setUTCDate(accountNow.getUTCDate() - 1);
+  return `${accountNow.getUTCFullYear()}-${String(accountNow.getUTCMonth() + 1).padStart(2, '0')}-${String(accountNow.getUTCDate()).padStart(2, '0')}`;
+}
+
+async function loadFacebookAccountTimezone() {
+  if (!expectedFacebookAccountId) throw new Error('无法识别 Facebook 广告账户 ID');
+  if (!facebookAccessToken) throw new Error('尚未从 Facebook 登录会话获取账户时区凭据，请刷新报表后重试');
+  if (!debuggerAttached || targetTabId == null) throw new Error('Facebook 页面调试会话尚未就绪');
+  const fields = 'timezone_name,timezone_offset_hours_utc';
+  const url = `https://adsmanager-graph.facebook.com/v16.0/act_${encodeURIComponent(expectedFacebookAccountId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(facebookAccessToken)}`;
+  // Run the request in the open Ads Manager page so Facebook receives the same
+  // origin, referer and logged-in browser context as its own requests.
+  const expression = `fetch(${JSON.stringify(url)}, { method: 'GET', credentials: 'include' }).then(async (response) => ({ ok: response.ok, status: response.status, data: await response.json().catch(() => ({})) }))`;
+  const evaluated = await chromeDebuggerSendCommand(targetTabId, 'Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true
+  });
+  const result = evaluated && evaluated.result;
+  if (!result || evaluated.exceptionDetails) throw new Error('Facebook 页面未能完成账户时区请求');
+  const responseResult = result.value || {};
+  const data = responseResult.data || {};
+  if (!responseResult.ok || data.error) {
+    const detail = data && data.error && data.error.message ? data.error.message : `HTTP ${responseResult.status || 0}`;
+    throw new Error('获取 Facebook 账户时区失败: ' + detail);
+  }
+  const offset = Number(data.timezone_offset_hours_utc);
+  const label = formatGmtOffset(offset);
+  if (!Number.isFinite(offset) || !label) throw new Error('Facebook 账户未返回有效时区');
+  facebookAccountTimezone = {
+    timezone_name: String(data.timezone_name || ''),
+    timezone_offset_hours_utc: offset,
+    account_timezone: label
+  };
+  return facebookAccountTimezone;
+}
+
+function applyFacebookAccountTimezone(records, timezone) {
+  return records.map((record) => {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    return {
+      ...record,
+      account_timezone: timezone.account_timezone,
+      timezone_name: timezone.timezone_name,
+      timezone_offset_hours_utc: timezone.timezone_offset_hours_utc,
+      raw_fields: {
+        ...raw,
+        account_timezone: timezone.account_timezone,
+        timezone_name: timezone.timezone_name,
+        timezone_offset_hours_utc: timezone.timezone_offset_hours_utc
+      }
+    };
+  });
+}
+
 function googleRecordFingerprint(result) {
   const record = result && Array.isArray(result.data) ? result.data[0] : null;
   if (!record) return '';
@@ -159,6 +252,108 @@ async function collectStableGoogleAdsData(tabId) {
   return { success: false, error: '等待 Google Ads 报表稳定超时：' + lastError };
 }
 
+function facebookRecordFingerprint(result) {
+  const record = result && Array.isArray(result.data) ? result.data[0] : null;
+  if (!record) return '';
+  return JSON.stringify({
+    account_id: record.ad_account_id || record.account_id || '',
+    business_id: record.business_id || record.bm_id || '',
+    date_start: record.date_start || '',
+    date_stop: record.date_stop || '',
+    spend: Number(record.spend || 0),
+    results: Number(record.results || 0),
+    reach: Number(record.reach || 0),
+    impressions: Number(record.impressions || 0),
+    clicks: Number(record.clicks || 0),
+    currency: record.currency || ''
+  });
+}
+
+async function collectStableFacebookAdsDomData(tabId) {
+  let lastError = '报表尚未加载完成';
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const first = await chromeTabsSendMessage(tabId, { action: 'collectFacebookAdsData' });
+    if (!first || !first.success || !Array.isArray(first.data) || !first.data.length) {
+      lastError = (first && first.error) || lastError;
+      if (/缺少可读取列|只支持采集单日|无法从 Facebook Ads 页面 URL 识别日期/.test(lastError)) {
+        return { success: false, error: lastError };
+      }
+      await sleep(1000);
+      continue;
+    }
+
+    await sleep(1000);
+    const second = await chromeTabsSendMessage(tabId, { action: 'collectFacebookAdsData' });
+    if (second && second.success && facebookRecordFingerprint(first) === facebookRecordFingerprint(second)) {
+      return second;
+    }
+    lastError = 'Facebook Ads DOM 报表数据仍在变化';
+  }
+  return { success: false, error: '等待 Facebook Ads DOM 报表稳定超时：' + lastError };
+}
+
+function facebookNetworkFingerprint(records) {
+  return JSON.stringify((Array.isArray(records) ? records : []).map((record) => {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    return {
+      account_id: raw.ad_account_id || record.ad_account_id || record.account_id || '',
+      date_start: raw.date_start || record.date_start || '',
+      date_stop: raw.date_stop || record.date_stop || '',
+      spend: raw.spend,
+      results: raw.results,
+      reach: raw.reach,
+      impressions: raw.impressions,
+      clicks: raw.clicks
+    };
+  }));
+}
+
+function validateFacebookNetworkRecords(records) {
+  if (!Array.isArray(records) || !records.length) return '尚未捕获到 Facebook Ads 汇总数据';
+  const required = ['spend', 'results', 'reach', 'impressions', 'clicks'];
+  for (const record of records) {
+    const raw = record && record.raw_fields ? record.raw_fields : {};
+    const accountId = String(raw.ad_account_id || record.ad_account_id || record.account_id || '').replace(/\D/g, '');
+    if (!accountId) return 'Facebook Ads 数据缺少广告账户 ID';
+    if (expectedFacebookAccountId && accountId !== expectedFacebookAccountId) return '捕获到的数据与当前广告账户不一致';
+    const dateStart = raw.date_start || record.date_start || '';
+    const dateStop = raw.date_stop || record.date_stop || '';
+    if (!dateStart || !dateStop || dateStart !== dateStop) return 'Facebook Ads 只支持采集单日数据';
+    for (const key of required) {
+      if (toNumberValue(raw[key] !== undefined ? raw[key] : record[key]) === null) {
+        return `Facebook Ads 数据字段无效：${key}`;
+      }
+    }
+  }
+  return '';
+}
+
+async function waitForStableFacebookNetworkData() {
+  const deadline = Date.now() + 30000;
+  let previousFingerprint = '';
+  let stableReads = 0;
+  let lastValidationError = '报表尚未加载完成';
+  while (Date.now() < deadline) {
+    const validationError = validateFacebookNetworkRecords(collectedRecords);
+    if (!validationError) {
+      const fingerprint = facebookNetworkFingerprint(collectedRecords);
+      if (fingerprint && fingerprint === previousFingerprint && Date.now() - lastFacebookDataChangeAt >= 1500) {
+        stableReads += 1;
+        if (stableReads >= 2) return { success: true };
+      } else {
+        stableReads = 0;
+      }
+      previousFingerprint = fingerprint;
+    } else {
+      lastValidationError = validationError;
+      stableReads = 0;
+      previousFingerprint = '';
+    }
+    await sleep(750);
+  }
+  return { success: false, error: `等待 Facebook Ads 网络报表稳定超时：${lastValidationError}` };
+}
+
 async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
   if (uploadTaskRunning) return;
   uploadTaskRunning = true;
@@ -173,8 +368,40 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       lastHeaders = googleResult.meta || null;
       recordCandidateCount = collectedRecords.length;
       recordKeptCount = collectedRecords.length;
+    } else if (currentPlatform === 'facebook_ads' && FB_DOM_TEST_MODE && targetTabId != null) {
+      const facebookResult = await collectStableFacebookAdsDomData(targetTabId);
+      if (!facebookResult || !facebookResult.success) {
+        setUploadTaskResult('error', '采集失败: ' + ((facebookResult && facebookResult.error) || '无法读取 Facebook Ads DOM 报表'));
+        return;
+      }
+      collectedRecords = Array.isArray(facebookResult.data) ? facebookResult.data : [];
+      lastHeaders = facebookResult.meta || null;
+      for (let i = 0; i < collectedRecords.length; i++) {
+        const record = collectedRecords[i];
+        const raw = record && record.raw_fields ? record.raw_fields : {};
+        if (Object.prototype.hasOwnProperty.call(record || {}, 'results') || Object.prototype.hasOwnProperty.call(raw, 'results')) continue;
+        const dateKey = `${raw.date_start || record.date_start || ''}__${raw.date_stop || record.date_stop || ''}`;
+        const aggregate = resultAggregateByDateKey.get(dateKey);
+        if (aggregate) applyResultAggregate(raw, aggregate);
+        if (!Object.prototype.hasOwnProperty.call(raw, 'results')) {
+          setUploadTaskResult('error', '采集失败: DOM 汇总成效为空，网络兜底也未捕获到完整成效数据');
+          return;
+        }
+        const numericResult = toNumberValue(raw.results);
+        collectedRecords[i] = {
+          ...record,
+          results: numericResult !== null ? numericResult : raw.results,
+          raw_fields: { ...raw, results_source: 'network_fallback' }
+        };
+      }
+      recordCandidateCount = collectedRecords.length;
+      recordKeptCount = collectedRecords.length;
     } else {
-      await sleep(5000);
+      const stableResult = await waitForStableFacebookNetworkData();
+      if (!stableResult.success) {
+        setUploadTaskResult('error', '采集失败: ' + stableResult.error);
+        return;
+      }
     }
     const data = Array.isArray(collectedRecords) ? collectedRecords.slice(0) : [];
     if (!data.length) {
@@ -187,13 +414,18 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       setUploadTaskResult('error', '上传失败: 缺少字段：' + missingLabels.join('、'));
       return;
     }
+    let uploadData = data;
+    if (currentPlatform === 'facebook_ads') {
+      const timezone = await loadFacebookAccountTimezone();
+      uploadData = applyFacebookAccountTimezone(data, timezone);
+    }
     const payload = {
       operator: 'unknown',
       project_name: projectName || '',
       buyer_name: buyerName || '',
       upload_mode: uploadMode || '当日消耗',
       timestamp: Math.floor(Date.now() / 60000) * 60000,
-      data
+      data: uploadData
     };
     const response = await fetch(apiEndpoint, {
       method: 'POST',
@@ -221,7 +453,10 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       const detail = firstError ? '，首条错误: ' + firstError : '';
       setUploadTaskResult('error', '上传失败: 成功 ' + uploaded + ' 条，失败 ' + failed + ' 条' + detail);
     } else {
-      setUploadTaskResult('success', '上传成功');
+      const timezoneDetail = currentPlatform === 'facebook_ads' && facebookAccountTimezone
+        ? `（账户时区 ${facebookAccountTimezone.account_timezone}，账户昨天 ${getYesterdayForGmtOffset(facebookAccountTimezone.timezone_offset_hours_utc)}）`
+        : '';
+      setUploadTaskResult('success', '上传成功' + timezoneDetail);
     }
   } catch (e) {
     const message = e && e.message ? e.message : String(e);
@@ -251,6 +486,26 @@ function extractAdAccountIdFromUrl(url) {
   if (!url || typeof url !== 'string') return '';
   const match = url.match(/act_(\d{6,})/i);
   return match && match[1] ? match[1] : '';
+}
+
+function extractPageAdAccountId(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const value = new URL(url).searchParams.get('act') || '';
+    return String(value).replace(/\D/g, '');
+  } catch (e) {
+    return '';
+  }
+}
+
+function extractPageBusinessId(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const value = new URL(url).searchParams.get('business_id') || '';
+    return String(value).replace(/\D/g, '');
+  } catch (e) {
+    return '';
+  }
 }
 
 function isAllowedAdsPage(url) {
@@ -382,16 +637,22 @@ function applyActionAggregate(raw, aggregate) {
 function applyResultAggregate(raw, aggregate) {
   if (!raw || !aggregate) return;
   let computedResult = aggregate.resultCount;
-  if (computedResult <= 0) {
+  let hasComputedResult = Boolean(aggregate.resultHasValue);
+  if (!hasComputedResult && computedResult <= 0) {
     const indicator = aggregate.resultIndicator;
     if (indicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
       const fromActions = toNumberValue(raw['actions:onsite_conversion.messaging_conversation_started_7d']);
       const fromOnsite = toNumberValue(raw['onsite_conversion.messaging_conversation_started_7d']);
-      if (fromActions !== null) computedResult = fromActions;
-      else if (fromOnsite !== null) computedResult = fromOnsite;
+      if (fromActions !== null) {
+        computedResult = fromActions;
+        hasComputedResult = true;
+      } else if (fromOnsite !== null) {
+        computedResult = fromOnsite;
+        hasComputedResult = true;
+      }
     }
   }
-  if (computedResult > 0) {
+  if (hasComputedResult) {
     raw.results = String(computedResult);
   } else if (aggregate.resultModeled) {
     raw.results = 'modeled';
@@ -399,6 +660,43 @@ function applyResultAggregate(raw, aggregate) {
   if (aggregate.resultIndicator) {
     raw.result_indicator = aggregate.resultIndicator;
   }
+}
+
+function rebuildActionAggregate(dateKey) {
+  const contributions = actionContributionByDateKey.get(dateKey);
+  if (!contributions || !contributions.size) return;
+  const aggregate = {
+    actionCount: 0,
+    actionCostTotal: 0,
+    actionCostHasValue: false,
+    actionCountModeled: false,
+    actionCostModeled: false
+  };
+  for (const contribution of contributions.values()) {
+    if (contribution.actionCount !== null) aggregate.actionCount += contribution.actionCount;
+    if (contribution.actionCostTotal !== null) {
+      aggregate.actionCostTotal += contribution.actionCostTotal;
+      aggregate.actionCostHasValue = true;
+    }
+    aggregate.actionCountModeled = aggregate.actionCountModeled || contribution.actionCountModeled;
+    aggregate.actionCostModeled = aggregate.actionCostModeled || contribution.actionCostModeled;
+  }
+  actionAggregateByDateKey.set(dateKey, aggregate);
+}
+
+function rebuildResultAggregate(dateKey) {
+  const contributions = resultContributionByDateKey.get(dateKey);
+  if (!contributions || !contributions.size) return;
+  const aggregate = { resultCount: 0, resultHasValue: false, resultModeled: false, resultIndicator: null };
+  for (const contribution of contributions.values()) {
+    if (contribution.resultCount !== null) {
+      aggregate.resultCount += contribution.resultCount;
+      aggregate.resultHasValue = true;
+    }
+    aggregate.resultModeled = aggregate.resultModeled || contribution.resultModeled;
+    aggregate.resultIndicator = aggregate.resultIndicator || contribution.resultIndicator;
+  }
+  resultAggregateByDateKey.set(dateKey, aggregate);
 }
 
 function updateSummaryRecordsByDateKey(dateKey) {
@@ -618,38 +916,23 @@ function extractFacebookInsightsData(data, adAccountId) {
 
       const dateKey = `${dateStart}__${dateStop}`;
       if (hasEntityValue) {
-        const existing = actionAggregateByDateKey.get(dateKey) || {
-          actionCount: 0,
-          actionCostTotal: 0,
-          actionCostHasValue: false,
-          actionCountModeled: false,
-          actionCostModeled: false
-        };
+        const entityKey = `${campaignValue}__${adsetValue}__${adValue}__${objective}`;
         const actionKey = 'actions:onsite_conversion.messaging_conversation_started_7d';
         const costKey = 'cost_per_action_type:onsite_conversion.messaging_conversation_started_7d';
         const actionRaw = normalizeValue(actionByName[actionKey]);
         const costRaw = normalizeValue(actionByName[costKey]);
         const actionCount = toNumberValue(actionByName[actionKey]);
-        if (actionCount !== null) {
-          existing.actionCount += actionCount;
-        } else if (actionRaw === 'modeled') {
-          existing.actionCountModeled = true;
-        }
         const actionCost = toNumberValue(actionByName[costKey]);
-        if (actionCount !== null && actionCost !== null) {
-          existing.actionCostTotal += actionCount * actionCost;
-          existing.actionCostHasValue = true;
-        } else if (costRaw === 'modeled') {
-          existing.actionCostModeled = true;
-        }
-        actionAggregateByDateKey.set(dateKey, existing);
+        const actionContributions = actionContributionByDateKey.get(dateKey) || new Map();
+        actionContributions.set(entityKey, {
+          actionCount,
+          actionCostTotal: actionCount !== null && actionCost !== null ? actionCount * actionCost : null,
+          actionCountModeled: actionRaw === 'modeled',
+          actionCostModeled: costRaw === 'modeled'
+        });
+        actionContributionByDateKey.set(dateKey, actionContributions);
+        rebuildActionAggregate(dateKey);
         if (resultIndicator && resultIndicator !== 'null') {
-          const resultExisting = resultAggregateByDateKey.get(dateKey) || {
-            resultCount: 0,
-            resultModeled: false,
-            resultIndicator: null
-          };
-          resultExisting.resultIndicator = resultExisting.resultIndicator || resultIndicator;
           let resultValue = resultValueByColumn.results;
           if (resultValue === undefined && typeof resultIndicator === 'string') {
             resultValue = actionByName[resultIndicator];
@@ -661,13 +944,21 @@ function extractFacebookInsightsData(data, adAccountId) {
           if (numericResult === null && resultIndicator === 'actions:onsite_conversion.messaging_conversation_started_7d') {
             numericResult = toNumberValue(atomicByName['onsite_conversion.messaging_conversation_started_7d']);
           }
-          if (numericResult !== null) {
-            resultExisting.resultCount += numericResult;
-          } else if (normalizeValue(resultValue) === 'modeled') {
-            resultExisting.resultModeled = true;
+          // Facebook 用空值/破折号表示该广告系列在当前成效指标下为 0。
+          // 只在响应已经给出明确 result indicator 时转换，避免把尚未加载的结果误判为 0。
+          if (numericResult === null && normalizeValue(resultValue) === null) {
+            numericResult = 0;
           }
-          resultAggregateByDateKey.set(dateKey, resultExisting);
+          const resultContributions = resultContributionByDateKey.get(dateKey) || new Map();
+          resultContributions.set(entityKey, {
+            resultCount: numericResult,
+            resultModeled: normalizeValue(resultValue) === 'modeled',
+            resultIndicator
+          });
+          resultContributionByDateKey.set(dateKey, resultContributions);
+          rebuildResultAggregate(dateKey);
         }
+        lastFacebookDataChangeAt = Date.now();
         updateSummaryRecordsByDateKey(dateKey);
         continue;
       }
@@ -714,6 +1005,10 @@ function extractFacebookInsightsData(data, adAccountId) {
       const rawFields = { ...dimensionByName, ...atomicByName, ...actionByName, ...resultValueByColumn };
       if (accountId) {
         rawFields.ad_account_id = accountId;
+      }
+      if (expectedFacebookBusinessId) {
+        rawFields.bm_id = expectedFacebookBusinessId;
+        rawFields.business_id = expectedFacebookBusinessId;
       }
       if (
         completeRegistrations !== null &&
@@ -766,6 +1061,7 @@ function extractAdData(data, adAccountId) {
 }
 
 function upsertRecords(records) {
+  const before = facebookNetworkFingerprint(collectedRecords);
   for (const record of records) {
     const raw = record && record.raw_fields ? record.raw_fields : {};
     const dateStart = record.date_start || raw.date_start || '';
@@ -786,12 +1082,15 @@ function upsertRecords(records) {
       collectedRecords[idx] = { ...prev, ...record, raw_fields: { ...prevRaw, ...nextRaw } };
     }
   }
+  if (facebookNetworkFingerprint(collectedRecords) !== before) {
+    lastFacebookDataChangeAt = Date.now();
+  }
 }
 
 async function startCollecting(tabId) {
   lastError = null;
 
-  if (debuggerAttached && targetTabId != null && targetTabId !== tabId) {
+  if (debuggerAttached && targetTabId != null) {
     await stopCollecting();
   }
 
@@ -808,6 +1107,13 @@ async function startCollecting(tabId) {
   collectingReady = false;
   actionAggregateByDateKey = new Map();
   resultAggregateByDateKey = new Map();
+  actionContributionByDateKey = new Map();
+  resultContributionByDateKey = new Map();
+  expectedFacebookAccountId = '';
+  expectedFacebookBusinessId = '';
+  facebookAccessToken = '';
+  facebookAccountTimezone = null;
+  lastFacebookDataChangeAt = Date.now();
   uploadTaskRunning = false;
   lastUploadTaskResult = null;
 
@@ -819,12 +1125,15 @@ async function startCollecting(tabId) {
     return;
   }
 
+  expectedFacebookAccountId = extractPageAdAccountId(activeTab && activeTab.url);
+  if (!expectedFacebookAccountId) {
+    throw new Error('无法从当前 Facebook Ads 页面识别广告账户 ID');
+  }
+  expectedFacebookBusinessId = extractPageBusinessId(activeTab && activeTab.url);
+
   await chromeDebuggerAttach(tabId, '1.3');
   debuggerAttached = true;
   await chromeDebuggerSendCommand(tabId, 'Network.enable');
-  try {
-    await chromeDebuggerSendCommand(tabId, 'Network.setCacheDisabled', { cacheDisabled: true });
-  } catch (e) {}
   isCollecting = true;
   collectingReady = true;
 }
@@ -841,7 +1150,6 @@ async function stopCollecting() {
   debuggerAttached = false;
 
   try {
-    await chromeDebuggerSendCommand(tabId, 'Network.setCacheDisabled', { cacheDisabled: false });
     await chromeDebuggerSendCommand(tabId, 'Network.disable');
   } catch (e) {}
 
@@ -871,6 +1179,16 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
   if (!debuggerAttached || targetTabId == null) return;
   if (!source || source.tabId !== targetTabId) return;
 
+  if (eventName === 'Network.requestWillBeSent' && currentPlatform === 'facebook_ads') {
+    const request = params && params.request;
+    const requestUrl = request && request.url;
+    if (requestUrl && requestUrl.includes('adsmanager-graph.facebook.com')) {
+      const token = extractFacebookAccessToken(requestUrl) || extractFacebookAccessToken(request.postData || '');
+      if (token) facebookAccessToken = token;
+    }
+    return;
+  }
+
   if (eventName === 'Network.responseReceived') {
     const url = params && params.response && params.response.url;
     const requestId = params && params.requestId;
@@ -878,9 +1196,10 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
     if (!requestId || !url || !shouldCapture(url)) return;
     if (typeof status === 'number' && (status < 200 || status >= 300)) return;
     const extractedAdAccountId = extractAdAccountIdFromUrl(url);
+    if (extractedAdAccountId && expectedFacebookAccountId && extractedAdAccountId !== expectedFacebookAccountId) return;
     pendingResponseByRequestId.set(requestId, {
       url,
-      adAccountId: extractedAdAccountId
+      adAccountId: extractedAdAccountId || expectedFacebookAccountId
     });
     captureCount += 1;
     return;
@@ -917,6 +1236,21 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
       lastError = message;
     }
   }
+
+
+  if (eventName === 'Network.loadingFailed') {
+    const requestId = params && params.requestId;
+    if (requestId) pendingResponseByRequestId.delete(requestId);
+  }
+});
+
+chrome.debugger.onDetach.addListener((source) => {
+  if (!source || source.tabId !== targetTabId) return;
+  debuggerAttached = false;
+  isCollecting = false;
+  collectingReady = false;
+  pendingResponseByRequestId = new Map();
+  targetTabId = null;
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -924,17 +1258,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (action === 'startCollection') {
     const tabId = request && request.tabId;
-    try {
-      Promise.resolve()
-        .then(() => startCollecting(tabId))
-        .catch((e) => {
-          lastError = e && e.message ? e.message : String(e);
-        });
-      sendResponse({ success: true });
-    } catch (e) {
-      lastError = e && e.message ? e.message : String(e);
-      sendResponse({ success: false, error: lastError });
-    }
+    Promise.resolve()
+      .then(() => startCollecting(tabId))
+      .then(() => sendResponse({ success: true }))
+      .catch((e) => {
+        lastError = e && e.message ? e.message : String(e);
+        sendResponse({ success: false, error: lastError });
+      });
     return true;
   }
 
