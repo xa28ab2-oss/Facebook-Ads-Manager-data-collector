@@ -474,7 +474,7 @@ module.exports = async function handler(req, res) {
   if (isGoogleAdsBatch && isRefluxMode) {
     return res.status(400).json({ error: 'Google Ads only supports consumption mode' });
   }
-  const isFacebookConsumptionTest = !isGoogleAdsBatch && !isRefluxMode && [project_name, buyer_name]
+  const isConsumptionDateTest = !isRefluxMode && [project_name, buyer_name]
     .some((value) => String(value || '').trim().toLowerCase() === 'test');
 
   {
@@ -529,7 +529,7 @@ module.exports = async function handler(req, res) {
           actual: { date_start: range.date_start || null, date_stop: range.date_stop || null }
         });
       }
-    } else if (!isFacebookConsumptionTest) {
+    } else if (!isConsumptionDateTest) {
       const invalidRecord = data.find((record) => {
         const range = extractDateRange(record);
         const timezoneOffset = isGoogleAdsBatch ? null : getRecordTimezoneOffset(record);
