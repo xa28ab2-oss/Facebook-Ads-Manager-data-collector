@@ -107,3 +107,13 @@ Facebook_data_Chrome_Extension/
 - 请勿将 `access_token`、Cookie、用户凭据写入代码或提交到仓库。
 - `.env` 文件和本地日志应保持在本地，不上传到 Git。
 - 仅上传业务代码、静态资源和文档。
+
+## 八、审批项目外部选项
+
+审批表单可通过 `POST /api/approval-project-options` 动态读取项目名称。
+
+- `LARK_APPROVAL_OPTIONS_TOKEN`：审批外部选项请求校验 Token。
+- 复用 `LARK_BUSINESS_PROJECT_TABLES`：根据商务代码选择对应的项目表。
+- 联动参数建议使用 `business_code`，支持 `tlx`、`fq`、`ws`，也兼容天狼星、番茄、五三。
+- 项目表字段名必须为 `项目名称`。
+- 当前接口按照审批 V1 格式返回，单次最多返回 200 个项目。
