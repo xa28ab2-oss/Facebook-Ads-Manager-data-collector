@@ -142,8 +142,21 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_BUYER_TABLE_ID || !LARK_PROJECT_TABLE_ID) {
+  const requestedBusinessMode = req.query && (
+    String(req.query.business_project || '') === '1' ||
+    String(req.query.business_project_test || '') === '1'
+  );
+  const businessProjectEnabled = LARK_BUSINESS_PROJECT_ENABLED || requestedBusinessMode;
+  const businessTables = parseBusinessProjectTables();
+
+  if (!LARK_APP_TOKEN || !LARK_APP_ID || !LARK_APP_SECRET || !LARK_BUYER_TABLE_ID) {
     return res.status(500).json({ error: 'Lark API configuration missing' });
+  }
+  if (!businessProjectEnabled && !LARK_PROJECT_TABLE_ID) {
+    return res.status(500).json({ error: 'Legacy project table configuration missing' });
+  }
+  if (businessProjectEnabled && !Object.keys(businessTables).length) {
+    return res.status(500).json({ error: 'Business project table configuration missing' });
   }
 
   try {
@@ -169,45 +182,41 @@ module.exports = async function handler(req, res) {
       if (!buyerPageToken) break;
     }
 
-    let projectPageToken = '';
-    for (let i = 0; i < 5; i++) {
-      const resp = await listBitableRecords(tenantAccessToken, LARK_PROJECT_TABLE_ID, projectPageToken);
-      const items = resp && resp.data && Array.isArray(resp.data.items) ? resp.data.items : [];
-      for (const item of items) {
-        const fields = item && item.fields ? item.fields : {};
-        for (const key of Object.keys(fields)) {
-          if (shouldIgnoreOptionField(key)) continue;
-          const values = extractStringValues(fields[key]);
-          for (const project of values) {
-            if (project) projects.add(project);
+    if (!businessProjectEnabled) {
+      let projectPageToken = '';
+      for (let i = 0; i < 5; i++) {
+        const resp = await listBitableRecords(tenantAccessToken, LARK_PROJECT_TABLE_ID, projectPageToken);
+        const items = resp && resp.data && Array.isArray(resp.data.items) ? resp.data.items : [];
+        for (const item of items) {
+          const fields = item && item.fields ? item.fields : {};
+          for (const key of Object.keys(fields)) {
+            if (shouldIgnoreOptionField(key)) continue;
+            const values = extractStringValues(fields[key]);
+            for (const project of values) {
+              if (project) projects.add(project);
+            }
+          }
+        }
+        projectPageToken = resp && resp.data ? resp.data.page_token : '';
+        if (!projectPageToken) break;
+      }
+
+      const fieldResp = await listBitableFields(tenantAccessToken, LARK_PROJECT_TABLE_ID);
+      const fieldItems = fieldResp && fieldResp.data && Array.isArray(fieldResp.data.items) ? fieldResp.data.items : [];
+      for (const field of fieldItems) {
+        const fieldName = field && (field.field_name || field.fieldName || field.name);
+        if (shouldIgnoreOptionField(fieldName)) continue;
+        const property = field && field.property ? field.property : {};
+        const options = Array.isArray(property.options) ? property.options : [];
+        for (const option of options) {
+          const names = extractStringValues(option && (option.name || option.text || option.value));
+          for (const name of names) {
+            if (name) projects.add(name);
           }
         }
       }
-      projectPageToken = resp && resp.data ? resp.data.page_token : '';
-      if (!projectPageToken) break;
     }
 
-    const fieldResp = await listBitableFields(tenantAccessToken, LARK_PROJECT_TABLE_ID);
-    const fieldItems = fieldResp && fieldResp.data && Array.isArray(fieldResp.data.items) ? fieldResp.data.items : [];
-    for (const field of fieldItems) {
-      const fieldName = field && (field.field_name || field.fieldName || field.name);
-      if (shouldIgnoreOptionField(fieldName)) continue;
-      const property = field && field.property ? field.property : {};
-      const options = Array.isArray(property.options) ? property.options : [];
-      for (const option of options) {
-        const names = extractStringValues(option && (option.name || option.text || option.value));
-        for (const name of names) {
-          if (name) projects.add(name);
-        }
-      }
-    }
-
-    const businessTables = parseBusinessProjectTables();
-    const requestedBusinessMode = req.query && (
-      String(req.query.business_project || '') === '1' ||
-      String(req.query.business_project_test || '') === '1'
-    );
-    const businessProjectEnabled = LARK_BUSINESS_PROJECT_ENABLED || requestedBusinessMode;
     const businesses = [];
     const projectsByBusiness = {};
     if (businessProjectEnabled) {
