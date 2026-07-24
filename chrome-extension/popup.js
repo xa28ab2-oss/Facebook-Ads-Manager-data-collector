@@ -365,7 +365,13 @@
     });
   }
 
-  function findAndClickRefreshButton(tabId, callback) {
+  function findAndClickRefreshButton(tabId, isGoogleAds, callback) {
+    if (isGoogleAds) {
+      sendToBackground({ action: 'clickGoogleRefreshTrusted', tabId }).then((response) => {
+        callback(response && response.success, response && response.error, response || null);
+      });
+      return;
+    }
     chrome.tabs.sendMessage(tabId, { action: 'clickRefresh' }, function(response) {
       if (chrome.runtime.lastError) {
         callback(false, chrome.runtime.lastError.message);
@@ -482,7 +488,7 @@
       }
 
       const proceedAfterRefresh = async function() {
-        addLog(isGoogleAds ? '等待 Google Ads 报表刷新并校验数据...' : '等待 Facebook Ads 网络报表稳定并校验数据...');
+        addLog(isGoogleAds ? '等待 Google Ads 报表刷新并校验数据...' : '等待 Facebook 广告报表刷新并校验数据...');
         updateStatus('正在后台上传数据...', 'collecting');
         const triggerResp = await sendToBackground({
           action: 'finalizeCollectionUpload',
@@ -505,11 +511,9 @@
         await sendToBackground({ action: 'stopCollection' });
       };
 
-      findAndClickRefreshButton(tab.id, async function(success, error, refreshResult) {
+      findAndClickRefreshButton(tab.id, isGoogleAds, async function(success, error, refreshResult) {
         if (success) {
-          addLog(refreshResult && refreshResult.click_count === 2
-            ? 'Google Ads 第一次刷新后报表不可读取，已自动补点第 2 次'
-            : isGoogleAds ? 'Google Ads 刷新 1 次后报表已可读取' : '刷新按钮已点击');
+          addLog(isGoogleAds ? 'Google Ads 刷新按钮已点击 1 次' : '刷新按钮已点击');
           proceedAfterRefresh();
           return;
         }
@@ -521,11 +525,9 @@
           const injected = await ensureContentScript(tab.id);
           if (injected) {
             addLog('内容脚本已注入，重试点击刷新...');
-            findAndClickRefreshButton(tab.id, async function(success2, error2, refreshResult2) {
+            findAndClickRefreshButton(tab.id, isGoogleAds, async function(success2, error2, refreshResult2) {
               if (success2) {
-                addLog(refreshResult2 && refreshResult2.click_count === 2
-                  ? 'Google Ads 第一次刷新后报表不可读取，已自动补点第 2 次'
-                  : isGoogleAds ? 'Google Ads 刷新 1 次后报表已可读取' : '刷新按钮已点击');
+                addLog(isGoogleAds ? 'Google Ads 刷新按钮已点击 1 次' : '刷新按钮已点击');
                 proceedAfterRefresh();
               } else {
                 addLog('点击刷新按钮失败: ' + (error2 || 'unknown'), 'error');

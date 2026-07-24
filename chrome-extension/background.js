@@ -3,6 +3,7 @@ const API_PATTERNS = ['adsmanager-graph.facebook.com', 'act_', 'am_tabular', '/a
 let isCollecting = false;
 let collectedRecords = [];
 let debuggerAttached = false;
+let expectedGoogleDebuggerDetachTabId = null;
 let targetTabId = null;
 let lastError = null;
 let pendingResponseByRequestId = new Map();
@@ -19,7 +20,6 @@ let resultAggregateByDateKey = new Map();
 let uploadTaskRunning = false;
 let lastUploadTaskResult = null;
 let currentPlatform = 'facebook_ads';
-const FB_DOM_TEST_MODE = false;
 let expectedFacebookAccountId = '';
 let expectedFacebookBusinessId = '';
 let lastFacebookDataChangeAt = 0;
@@ -234,7 +234,10 @@ function googleRecordFingerprint(result) {
 
 async function collectStableGoogleAdsData(tabId) {
   let lastError = '报表尚未加载完成';
-  for (let attempt = 0; attempt < 30; attempt++) {
+  // 给首次刷新留出启动时间，避免立即读取到刷新前的旧汇总数据。
+  await sleep(2500);
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
     const first = await chromeTabsSendMessage(tabId, { action: 'collectGoogleAdsData' });
     if (!first || !first.success || !Array.isArray(first.data) || !first.data.length) {
       lastError = (first && first.error) || lastError;
@@ -250,46 +253,6 @@ async function collectStableGoogleAdsData(tabId) {
     lastError = 'Google Ads 报表数据仍在变化';
   }
   return { success: false, error: '等待 Google Ads 报表稳定超时：' + lastError };
-}
-
-function facebookRecordFingerprint(result) {
-  const record = result && Array.isArray(result.data) ? result.data[0] : null;
-  if (!record) return '';
-  return JSON.stringify({
-    account_id: record.ad_account_id || record.account_id || '',
-    business_id: record.business_id || record.bm_id || '',
-    date_start: record.date_start || '',
-    date_stop: record.date_stop || '',
-    spend: Number(record.spend || 0),
-    results: Number(record.results || 0),
-    reach: Number(record.reach || 0),
-    impressions: Number(record.impressions || 0),
-    clicks: Number(record.clicks || 0),
-    currency: record.currency || ''
-  });
-}
-
-async function collectStableFacebookAdsDomData(tabId) {
-  let lastError = '报表尚未加载完成';
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const first = await chromeTabsSendMessage(tabId, { action: 'collectFacebookAdsData' });
-    if (!first || !first.success || !Array.isArray(first.data) || !first.data.length) {
-      lastError = (first && first.error) || lastError;
-      if (/缺少可读取列|只支持采集单日|无法从 Facebook Ads 页面 URL 识别日期/.test(lastError)) {
-        return { success: false, error: lastError };
-      }
-      await sleep(1000);
-      continue;
-    }
-
-    await sleep(1000);
-    const second = await chromeTabsSendMessage(tabId, { action: 'collectFacebookAdsData' });
-    if (second && second.success && facebookRecordFingerprint(first) === facebookRecordFingerprint(second)) {
-      return second;
-    }
-    lastError = 'Facebook Ads DOM 报表数据仍在变化';
-  }
-  return { success: false, error: '等待 Facebook Ads DOM 报表稳定超时：' + lastError };
 }
 
 function facebookNetworkFingerprint(records) {
@@ -308,20 +271,76 @@ function facebookNetworkFingerprint(records) {
   }));
 }
 
+function facebookNetworkColumnPresent(key) {
+  const atomicColumns = new Set(
+    ((lastHeaders && Array.isArray(lastHeaders.atomic_columns)) ? lastHeaders.atomic_columns : [])
+      .map((name) => normalizeMetricKey(name))
+      .filter(Boolean)
+  );
+  const resultColumns = new Set(
+    ((lastHeaders && Array.isArray(lastHeaders.result_columns)) ? lastHeaders.result_columns : [])
+      .map((name) => normalizeMetricKey(name))
+      .filter(Boolean)
+  );
+  const aliases = {
+    spend: ['spend'],
+    results: ['results'],
+    reach: ['reach'],
+    impressions: ['impressions', 'total_impressions'],
+    clicks: ['clicks', 'unique_clicks', 'unique_link_clicks', 'link_clicks', 'outbound_clicks', 'unique_outbound_clicks']
+  };
+  const candidates = aliases[key] || [key];
+  return candidates.some((name) => atomicColumns.has(normalizeMetricKey(name))) ||
+    (key === 'results' && candidates.some((name) => resultColumns.has(normalizeMetricKey(name))));
+}
+
+function normalizeZeroSpendFacebookMetrics(records) {
+  const zeroableFields = ['results', 'reach', 'impressions', 'clicks'];
+  for (const record of Array.isArray(records) ? records : []) {
+    if (!record || typeof record !== 'object') continue;
+    const raw = record.raw_fields && typeof record.raw_fields === 'object'
+      ? record.raw_fields
+      : {};
+    const spendValue = raw.spend !== undefined ? raw.spend : record.spend;
+    if (toNumberValue(spendValue) !== 0) continue;
+    for (const key of zeroableFields) {
+      if (!facebookNetworkColumnPresent(key)) continue;
+      const value = raw[key] !== undefined ? raw[key] : record[key];
+      if (toNumberValue(value) !== null) continue;
+      raw[key] = 0;
+      record[key] = 0;
+    }
+    raw.zero_spend_empty_metrics_normalized = true;
+    record.raw_fields = raw;
+  }
+}
+
 function validateFacebookNetworkRecords(records) {
-  if (!Array.isArray(records) || !records.length) return '尚未捕获到 Facebook Ads 汇总数据';
-  const required = ['spend', 'results', 'reach', 'impressions', 'clicks'];
+  if (!Array.isArray(records) || !records.length) return '尚未读取到 Facebook 广告汇总数据';
+  normalizeZeroSpendFacebookMetrics(records);
+  const required = [
+    { key: 'spend', label: '消耗' },
+    { key: 'results', label: '成效' },
+    { key: 'reach', label: '覆盖人数' },
+    { key: 'impressions', label: '展示次数' },
+    { key: 'clicks', label: '点击次数' }
+  ];
+  for (const field of required) {
+    if (!facebookNetworkColumnPresent(field.key)) {
+      return `无法读取“${field.label}”，请在 Facebook 报表中显示该列并刷新后重试`;
+    }
+  }
   for (const record of records) {
     const raw = record && record.raw_fields ? record.raw_fields : {};
     const accountId = String(raw.ad_account_id || record.ad_account_id || record.account_id || '').replace(/\D/g, '');
-    if (!accountId) return 'Facebook Ads 数据缺少广告账户 ID';
+    if (!accountId) return 'Facebook 广告数据缺少广告账户 ID';
     if (expectedFacebookAccountId && accountId !== expectedFacebookAccountId) return '捕获到的数据与当前广告账户不一致';
     const dateStart = raw.date_start || record.date_start || '';
     const dateStop = raw.date_stop || record.date_stop || '';
     if (!dateStart || !dateStop || dateStart !== dateStop) return 'Facebook Ads 只支持采集单日数据';
-    for (const key of required) {
-      if (toNumberValue(raw[key] !== undefined ? raw[key] : record[key]) === null) {
-        return `Facebook Ads 数据字段无效：${key}`;
+    for (const field of required) {
+      if (toNumberValue(raw[field.key] !== undefined ? raw[field.key] : record[field.key]) === null) {
+        return `无法读取“${field.label}”，请在 Facebook 报表中显示该列并刷新后重试`;
       }
     }
   }
@@ -329,7 +348,7 @@ function validateFacebookNetworkRecords(records) {
 }
 
 async function waitForStableFacebookNetworkData() {
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + 10000;
   let previousFingerprint = '';
   let stableReads = 0;
   let lastValidationError = '报表尚未加载完成';
@@ -351,7 +370,7 @@ async function waitForStableFacebookNetworkData() {
     }
     await sleep(750);
   }
-  return { success: false, error: `等待 Facebook Ads 网络报表稳定超时：${lastValidationError}` };
+  return { success: false, error: `等待 Facebook 广告报表刷新超时：${lastValidationError}` };
 }
 
 async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
@@ -366,34 +385,6 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
       }
       collectedRecords = Array.isArray(googleResult.data) ? googleResult.data : [];
       lastHeaders = googleResult.meta || null;
-      recordCandidateCount = collectedRecords.length;
-      recordKeptCount = collectedRecords.length;
-    } else if (currentPlatform === 'facebook_ads' && FB_DOM_TEST_MODE && targetTabId != null) {
-      const facebookResult = await collectStableFacebookAdsDomData(targetTabId);
-      if (!facebookResult || !facebookResult.success) {
-        setUploadTaskResult('error', '采集失败: ' + ((facebookResult && facebookResult.error) || '无法读取 Facebook Ads DOM 报表'));
-        return;
-      }
-      collectedRecords = Array.isArray(facebookResult.data) ? facebookResult.data : [];
-      lastHeaders = facebookResult.meta || null;
-      for (let i = 0; i < collectedRecords.length; i++) {
-        const record = collectedRecords[i];
-        const raw = record && record.raw_fields ? record.raw_fields : {};
-        if (Object.prototype.hasOwnProperty.call(record || {}, 'results') || Object.prototype.hasOwnProperty.call(raw, 'results')) continue;
-        const dateKey = `${raw.date_start || record.date_start || ''}__${raw.date_stop || record.date_stop || ''}`;
-        const aggregate = resultAggregateByDateKey.get(dateKey);
-        if (aggregate) applyResultAggregate(raw, aggregate);
-        if (!Object.prototype.hasOwnProperty.call(raw, 'results')) {
-          setUploadTaskResult('error', '采集失败: DOM 汇总成效为空，网络兜底也未捕获到完整成效数据');
-          return;
-        }
-        const numericResult = toNumberValue(raw.results);
-        collectedRecords[i] = {
-          ...record,
-          results: numericResult !== null ? numericResult : raw.results,
-          raw_fields: { ...raw, results_source: 'network_fallback' }
-        };
-      }
       recordCandidateCount = collectedRecords.length;
       recordKeptCount = collectedRecords.length;
     } else {
@@ -1120,6 +1111,8 @@ async function startCollecting(tabId) {
   const activeTab = await chromeTabsGet(tabId);
   currentPlatform = activeTab && /^https:\/\/ads\.google\.com\/aw\//i.test(activeTab.url || '') ? 'google_ads' : 'facebook_ads';
   if (currentPlatform === 'google_ads') {
+    await chromeDebuggerAttach(tabId, '1.3');
+    debuggerAttached = true;
     isCollecting = true;
     collectingReady = true;
     return;
@@ -1172,6 +1165,51 @@ function chromeTabsSendMessage(tabId, message) {
       resolve(response);
     });
   });
+}
+
+async function clickGoogleRefreshTrusted(tabId) {
+  if (currentPlatform !== 'google_ads' || targetTabId !== tabId) {
+    throw new Error('Google Ads 采集会话尚未就绪');
+  }
+  if (!debuggerAttached) throw new Error('浏览器级点击尚未就绪');
+  const rect = await chromeTabsSendMessage(tabId, { action: 'getRefreshButtonRect' });
+  if (!rect || !rect.success || !Number.isFinite(rect.x) || !Number.isFinite(rect.y)) {
+    throw new Error((rect && rect.error) || '无法定位 Google Ads 刷新按钮');
+  }
+  try {
+    await chromeDebuggerSendCommand(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: rect.x,
+      y: rect.y
+    });
+    await chromeDebuggerSendCommand(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x: rect.x,
+      y: rect.y,
+      button: 'left',
+      buttons: 1,
+      clickCount: 1
+    });
+    await sleep(60);
+    await chromeDebuggerSendCommand(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: rect.x,
+      y: rect.y,
+      button: 'left',
+      buttons: 0,
+      clickCount: 1
+    });
+  } finally {
+    // Google 仅在点击瞬间需要调试连接；立即释放，避免持续连接影响报表渲染。
+    expectedGoogleDebuggerDetachTabId = tabId;
+    debuggerAttached = false;
+    try {
+      await chromeDebuggerDetach(tabId);
+    } catch (e) {
+      expectedGoogleDebuggerDetachTabId = null;
+    }
+  }
+  return { success: true, click_count: 1, click_mode: 'browser_input' };
 }
 
 chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
@@ -1245,6 +1283,11 @@ chrome.debugger.onEvent.addListener(async (source, eventName, params) => {
 });
 
 chrome.debugger.onDetach.addListener((source) => {
+  if (source && source.tabId === expectedGoogleDebuggerDetachTabId) {
+    expectedGoogleDebuggerDetachTabId = null;
+    debuggerAttached = false;
+    return;
+  }
   if (!source || source.tabId !== targetTabId) return;
   debuggerAttached = false;
   isCollecting = false;
@@ -1276,6 +1319,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         lastError = e && e.message ? e.message : String(e);
         sendResponse({ success: false, error: lastError });
       });
+    return true;
+  }
+
+  if (action === 'clickGoogleRefreshTrusted') {
+    const tabId = request && request.tabId;
+    Promise.resolve()
+      .then(() => clickGoogleRefreshTrusted(tabId))
+      .then((result) => sendResponse(result))
+      .catch((e) => sendResponse({ success: false, error: e && e.message ? e.message : String(e) }));
     return true;
   }
 
