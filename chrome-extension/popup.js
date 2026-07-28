@@ -439,6 +439,12 @@
 
   collectBtn.addEventListener('click', async function() {
     const businessName = businessNameInput ? businessNameInput.value.trim() : '';
+    const selectedBusinessOption = businessNameInput && businessNameInput.selectedIndex >= 0
+      ? businessNameInput.options[businessNameInput.selectedIndex]
+      : null;
+    const businessLabel = selectedBusinessOption
+      ? String(selectedBusinessOption.textContent || businessName).trim()
+      : businessName;
     const projectName = projectNameInput.value.trim();
     const buyerName = buyerNameInput.value.trim();
     const uploadMode = uploadModeInput ? String(uploadModeInput.value || '消耗').trim() : '消耗';
@@ -492,6 +498,8 @@
         updateStatus('正在后台上传数据...', 'collecting');
         const triggerResp = await sendToBackground({
           action: 'finalizeCollectionUpload',
+          business_code: businessName || '',
+          business_name: businessLabel || businessName || '',
           project_name: projectName || '',
           buyer_name: buyerName || '',
           upload_mode: uploadMode || '消耗',

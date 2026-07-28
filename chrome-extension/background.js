@@ -373,7 +373,7 @@ async function waitForStableFacebookNetworkData() {
   return { success: false, error: `等待 Facebook 广告报表刷新超时：${lastValidationError}` };
 }
 
-async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint) {
+async function runFinalizeUploadTask(businessCode, businessName, projectName, buyerName, uploadMode, apiEndpoint) {
   if (uploadTaskRunning) return;
   uploadTaskRunning = true;
   try {
@@ -412,6 +412,8 @@ async function runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndp
     }
     const payload = {
       operator: 'unknown',
+      business_code: businessCode || '',
+      business_name: businessName || businessCode || '',
       project_name: projectName || '',
       buyer_name: buyerName || '',
       upload_mode: uploadMode || '当日消耗',
@@ -1370,6 +1372,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (action === 'finalizeCollectionUpload') {
+    const businessCode = request && request.business_code;
+    const businessName = request && request.business_name;
     const projectName = request && request.project_name;
     const buyerName = request && request.buyer_name;
     const uploadMode = request && request.upload_mode;
@@ -1384,7 +1388,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     lastUploadTaskResult = null;
     Promise.resolve()
-      .then(() => runFinalizeUploadTask(projectName, buyerName, uploadMode, apiEndpoint))
+      .then(() => runFinalizeUploadTask(businessCode, businessName, projectName, buyerName, uploadMode, apiEndpoint))
       .catch((e) => {
         const message = e && e.message ? e.message : String(e);
         setUploadTaskResult('error', '上传失败: ' + message);

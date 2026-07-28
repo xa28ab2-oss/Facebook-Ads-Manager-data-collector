@@ -227,6 +227,7 @@ function buildFieldMapping(fieldsItems) {
     upload_mode: pickField(fieldsIndex, ['upload_mode', 'uploadmode', '上传模式', '模式']),
     operator: pickField(fieldsIndex, ['operator', '操作人', '操作者', '采集人']),
     username: pickField(fieldsIndex, ['username', 'user', '用户名', '用户']),
+    business_name: pickField(fieldsIndex, ['business_name', 'businessname', '项目所属商务', '所属商务', '商务名称', '商务']),
     project_name: pickField(fieldsIndex, ['project_name', 'project', '项目名称', '项目']),
     buyer_name: pickField(fieldsIndex, ['buyer_name', 'buyer', '投手名称', '投手', '操盘手']),
     media_name: pickField(fieldsIndex, ['media_name', 'medianame', 'platform', 'source_platform', '媒介名称', '媒介', '广告平台']),
@@ -276,6 +277,7 @@ function buildFieldsPayload(record, mapping, fieldsItems, allowedKeys) {
   if (allow('upload_mode')) setBitableFieldValue(fields, mapping.upload_mode, record.upload_mode || '', 'text');
   if (allow('operator')) setBitableFieldValue(fields, mapping.operator, record.operator || '', 'text');
   if (allow('username')) setBitableFieldValue(fields, mapping.username, record.username || '', 'text');
+  if (allow('business_name')) setBitableFieldValue(fields, mapping.business_name, record.business_name || '', 'text');
   if (allow('project_name')) setBitableFieldValue(fields, mapping.project_name, record.project_name || '', 'text');
   if (allow('buyer_name')) setBitableFieldValue(fields, mapping.buyer_name, record.buyer_name || '', 'text');
   if (allow('media_name')) setBitableFieldValue(fields, mapping.media_name, mediaName, 'text');
@@ -446,7 +448,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { operator, username, project_name, buyer_name, upload_mode, timestamp, data } = req.body;
+  const { operator, username, business_code, business_name, project_name, buyer_name, upload_mode, timestamp, data } = req.body;
   const isRefluxMode = upload_mode === '回流' || upload_mode === '回流消耗';
   const normalizedUploadMode = isRefluxMode ? '回流消耗' : '当日消耗';
   const mainTableId = isRefluxMode ? LARK_REFLUX_TABLE_ID : LARK_TABLE_ID;
@@ -569,6 +571,8 @@ module.exports = async function handler(req, res) {
     const commonPayload = {
       operator: operator,
       username: username || operator,
+      business_code: business_code || '',
+      business_name: business_name || business_code || '',
       project_name: project_name,
       buyer_name: buyer_name,
       upload_mode: normalizedUploadMode,
