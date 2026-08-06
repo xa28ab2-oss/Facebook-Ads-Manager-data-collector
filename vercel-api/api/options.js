@@ -7,7 +7,7 @@ const LARK_BUYER_TABLE_ID = process.env.LARK_BUYER_TABLE_ID || process.env.LARK_
 const LARK_PROJECT_TABLE_ID = process.env.LARK_PROJECT_TABLE_ID || '';
 const LARK_BUSINESS_PROJECT_TABLES = process.env.LARK_BUSINESS_PROJECT_TABLES || '';
 const LARK_BUSINESS_PROJECT_ENABLED = String(process.env.LARK_BUSINESS_PROJECT_ENABLED || '').toLowerCase() === 'true';
-const BUSINESS_LABELS = { tlx: '天狼星', fq: '番茄', ws: '五三' };
+const BUSINESS_LABELS = { tlx: '天狼星', fq: '番茄', ws: '五三', st: '石头' };
 
 function parseBusinessProjectTables() {
   if (!LARK_BUSINESS_PROJECT_TABLES) return {};

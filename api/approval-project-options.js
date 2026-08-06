@@ -13,7 +13,9 @@ const BUSINESS_CODES = {
   fq: 'fq',
   番茄: 'fq',
   ws: 'ws',
-  五三: 'ws'
+  五三: 'ws',
+  st: 'st',
+  石头: 'st'
 };
 
 function parseBusinessTables() {
